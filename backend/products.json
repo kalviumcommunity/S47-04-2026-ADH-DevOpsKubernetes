@@ -1,0 +1,17 @@
+[
+  { "id": 1, "name": "Wireless Mouse", "price": 25.99, "category": "Electronics", "stock": 150 },
+  { "id": 2, "name": "Mechanical Keyboard", "price": 75.00, "category": "Electronics", "stock": 85 },
+  { "id": 3, "name": "Gaming Monitor", "price": 250.00, "category": "Electronics", "stock": 40 },
+  { "id": 4, "name": "USB-C Hub", "price": 35.50, "category": "Accessories", "stock": 200 },
+  { "id": 5, "name": "Laptop Stand", "price": 45.00, "category": "Accessories", "stock": 120 },
+  { "id": 6, "name": "Noise Cancelling Headphones", "price": 199.99, "category": "Audio", "stock": 60 },
+  { "id": 7, "name": "Bluetooth Speaker", "price": 55.00, "category": "Audio", "stock": 110 },
+  { "id": 8, "name": "Webcam 1080p", "price": 49.99, "category": "Electronics", "stock": 90 },
+  { "id": 9, "name": "Desk Mat", "price": 20.00, "category": "Accessories", "stock": 300 },
+  { "id": 10, "name": "Ergonomic Chair", "price": 299.00, "category": "Furniture", "stock": 25 },
+  { "id": 11, "name": "Standing Desk", "price": 450.00, "category": "Furniture", "stock": 15 },
+  { "id": 12, "name": "External SSD 1TB", "price": 120.00, "category": "Storage", "stock": 80 },
+  { "id": 13, "name": "USB Flash Drive 128GB", "price": 18.00, "category": "Storage", "stock": 400 },
+  { "id": 14, "name": "Smartphone Stand", "price": 12.99, "category": "Accessories", "stock": 250 },
+  { "id": 15, "name": "Cable Management Kit", "price": 15.00, "category": "Accessories", "stock": 350 }
+]
