@@ -1,7 +1,7 @@
 # ---- Backend Dockerfile ----
 # Using Node.js Alpine for a small, secure base image (~50MB vs ~1GB for ubuntu)
 # Alpine is a minimal Linux distro purpose-built for containers
-FROM node:20-alpine
+FROM node:24-alpine
 
 # Set working directory inside the container
 WORKDIR /app

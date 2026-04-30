@@ -2,7 +2,8 @@
 
 # ============ STAGE 1: Build ============
 # Use Node.js to install dependencies and build the Vite app
-FROM node:20-alpine AS builder
+# Got Security vulnerabilities for node:20-alpine, so moving to node:24-alpine
+FROM node:24-alpine AS builder
 
 WORKDIR /app
 
