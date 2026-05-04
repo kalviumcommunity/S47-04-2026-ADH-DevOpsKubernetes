@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aerostore-deployment
+  labels:
+    app: frontend
+spec:
+  # 1. How many replicas do we want?
+  replicas: 3
+  # 2. How does the Deployment know which Pods it manages?
+  selector:
+    matchLabels:
+      app: frontend
+  # 3. What should the Pods look like? (Notice we are starting with version 1.14.2)
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: nginx-container
+          image: nginx:1.16.1
+          ports:
+            - containerPort: 80
