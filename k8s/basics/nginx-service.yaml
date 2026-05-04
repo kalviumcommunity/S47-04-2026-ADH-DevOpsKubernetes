@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: aerostore-frontend-service
+spec:
+  # 1. We are using NodePort so we can access it from outside the cluster
+  type: NodePort
+  
+  # 2. How does the Service know which Pods to send traffic to? 
+  selector:
+    app: frontend
+    
+  # 3. Port configuration
+  ports:
+    - port: 80         # The port the Service listens on internally
+      targetPort: 80   # The port your container is actually running on
+      nodePort: 30080  # The specific port opened to the outside world
