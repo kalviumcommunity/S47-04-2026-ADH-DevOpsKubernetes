@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: frontend-replicaset
+spec:
+  # 1. How many Pods do we want?
+  replicas: 3
+  # 2. How does the ReplicaSet know which Pods it owns? (It looks for this label)
+  selector:
+    matchLabels:
+      app: frontend
+  # 3. If the ReplicaSet needs to create a new Pod, what should it look like?
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: nginx-container
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
