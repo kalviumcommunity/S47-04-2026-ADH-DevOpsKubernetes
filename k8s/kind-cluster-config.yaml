@@ -1,0 +1,11 @@
+# k8s/kind-cluster-config.yaml
+# Configuration for a local Kubernetes cluster using kind (Kubernetes IN Docker)
+
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+
+nodes:
+  # Control Plane node — runs the API server, scheduler, controller manager, etcd
+  - role: control-plane
+  # Worker node — runs application workloads (pods)
+  - role: worker
