@@ -1,0 +1,69 @@
+# k8s/basics/backend-pvc.yaml
+#
+# PersistentVolumeClaim for the AeroStore backend
+#
+# PURPOSE:
+#   Requests a slice of durable storage from the cluster that persists
+#   independently of any individual Pod. This is the correct way to store
+#   data that must survive Pod restarts, rescheduling, or crashes.
+#
+# HOW PVCs WORK:
+#   1. This PVC is submitted to the Kubernetes API.
+#   2. Kubernetes looks for a PersistentVolume (PV) that satisfies the
+#      request (size, access mode, storage class).
+#   3. If a suitable PV exists (or StorageClass can provision one), the
+#      PVC moves from "Pending" → "Bound".
+#   4. The PVC is then mounted into any Pod that references it by name.
+#   5. The PV (the actual disk) persists even when Pods are deleted.
+#
+# LIFECYCLE:
+#   PVC exists independently of Pods. You can delete the Pod without
+#   deleting the PVC. The data remains on the PV until the PVC itself
+#   is explicitly deleted (and even then, the reclaim policy on the PV
+#   determines whether the data is kept or purged).
+#
+# ACCESS MODES:
+#   - ReadWriteOnce (RWO): mounted as read-write by ONE Node at a time.
+#     Appropriate for single-instance applications (most backends, DBs).
+#   - ReadOnlyMany (ROX): mounted as read-only by MANY Nodes simultaneously.
+#     Appropriate for shared config or media that should not be written.
+#   - ReadWriteMany (RWX): mounted as read-write by MANY Nodes simultaneously.
+#     Requires NFS, CephFS, or a cloud-native shared filesystem.
+#     Appropriate for shared upload storage in multi-replica deployments.
+#
+# STORAGE CLASS:
+#   "standard" is the default class in kind (local-path-provisioner).
+#   In production (GKE, EKS, AKS), use:
+#     - "standard-rwo" (GKE) → GCE Persistent Disk
+#     - "gp2" or "gp3" (EKS) → AWS EBS
+#     - "managed-premium" (AKS) → Azure Premium SSD
+#
+# VERIFICATION:
+#   kubectl get pvc backend-uploads-pvc
+#   kubectl describe pvc backend-uploads-pvc
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backend-uploads-pvc
+  labels:
+    app: backend
+    component: storage
+spec:
+  # ReadWriteOnce: this PVC is mounted on ONE Node at a time.
+  # For a single-replica backend this is correct and most cost-effective.
+  # For a multi-replica deployment sharing uploads, use ReadWriteMany
+  # with an NFS or CephFS storage class.
+  accessModes:
+    - ReadWriteOnce
+
+  # Request 2 GiB of storage from the cluster.
+  # The provisioner will create a PV >= this size.
+  # Kubernetes does not allow shrinking a PVC after creation.
+  resources:
+    requests:
+      storage: 2Gi
+
+  # "standard" → uses the default StorageClass in kind (local-path).
+  # Remove this field to use the cluster's default StorageClass automatically.
+  storageClassName: standard
