@@ -63,10 +63,78 @@ spec:
           # ─────────────────────────────────────────────────────────────────
           # SELECTIVE INJECTION (alternative pattern)
           # Use valueFrom to inject a single specific key instead of all keys.
-          # Useful when you only need one value from a large ConfigMap/Secret.
           # ─────────────────────────────────────────────────────────────────
           env:
             - name: POD_NAMESPACE
               valueFrom:
                 fieldRef:
-                  fieldPath: metadata.namespace   # Inject the Pod's own namespace
+                  fieldPath: metadata.namespace
+
+          # ─────────────────────────────────────────────────────────────────
+          # HEALTH PROBES
+          #
+          # Three probes work together to give Kubernetes full visibility into
+          # the container lifecycle. Each probe triggers a DIFFERENT action.
+          # ─────────────────────────────────────────────────────────────────
+
+          # STARTUP PROBE
+          # Question: "Has the app finished its slow initialization?"
+          # Action on failure: nothing yet — liveness/readiness are BLOCKED
+          #   until startupProbe passes. This prevents premature restarts for
+          #   slow-starting applications (e.g., JVM warmup, DB migration).
+          # This gives the container up to 30 * 10s = 300 seconds to start.
+          startupProbe:
+            httpGet:
+              path: /          # nginx serves 200 OK at root — simulates /healthz
+              port: 80
+            failureThreshold: 30   # Allow 30 failures before giving up on startup
+            periodSeconds: 10      # Check every 10 seconds during startup
+
+          # LIVENESS PROBE
+          # Question: "Is the container still alive and functional?"
+          # Action on failure: kubelet KILLS and RESTARTS the container.
+          #   Use for: detecting deadlocks, frozen request handlers,
+          #   corrupted in-memory state that cannot self-recover.
+          # IMPORTANT: initialDelaySeconds must be > startup time to avoid
+          #   killing the container before it's ready. The startupProbe above
+          #   handles this more cleanly for production.
+          livenessProbe:
+            httpGet:
+              path: /          # A 200 response means the app is alive
+              port: 80
+            initialDelaySeconds: 15  # Wait 15s before first check (after startup)
+            periodSeconds: 20        # Check every 20 seconds
+            timeoutSeconds: 5        # Fail if no response within 5 seconds
+            failureThreshold: 3      # Restart after 3 consecutive failures
+            successThreshold: 1      # 1 success = considered alive
+
+          # READINESS PROBE
+          # Question: "Is this container ready to receive user traffic?"
+          # Action on failure: Pod is REMOVED from the Service endpoint list.
+          #   Traffic stops routing to this Pod — but it is NOT restarted.
+          #   Use for: app not yet warmed up, dependency temporarily down,
+          #   connection pool saturated, short-term overload.
+          # When the probe passes again, the Pod is automatically re-added
+          # to the Service and traffic resumes — no human intervention.
+          readinessProbe:
+            httpGet:
+              path: /          # A 200 response means the app is ready for traffic
+              port: 80
+            initialDelaySeconds: 10  # Start checking 10s after container start
+            periodSeconds: 10        # Check every 10 seconds
+            timeoutSeconds: 3        # Fail if no response within 3 seconds
+            failureThreshold: 3      # Remove from Service after 3 consecutive failures
+            successThreshold: 1      # 1 success = added back to Service
+
+          # ─────────────────────────────────────────────────────────────────
+          # RESOURCE REQUESTS AND LIMITS
+          # Requests: used by scheduler to find a Node with enough capacity.
+          # Limits: enforced at runtime — CPU is throttled, memory causes OOMKill.
+          # ─────────────────────────────────────────────────────────────────
+          resources:
+            requests:
+              cpu: "100m"      # 0.1 CPU cores guaranteed
+              memory: "64Mi"   # 64 MB guaranteed
+            limits:
+              cpu: "200m"      # Container throttled if it exceeds 0.2 cores
+              memory: "128Mi"  # Container OOMKilled if it exceeds 128 MB

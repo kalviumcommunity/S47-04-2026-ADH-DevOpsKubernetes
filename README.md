@@ -232,6 +232,40 @@ Externalizing configuration separates *what the app does* from *where and how it
 
 > For the full injection patterns, verification steps, security analysis, and multi-environment strategy, see [Kubernetes ConfigMaps & Secrets](docs/Kubernetes-ConfigMaps-And-Secrets.md).
 
+### Phase 9: Health Probes — Liveness, Readiness & Startup ✅ *(NEW)*
+We implemented all three Kubernetes health probes in the backend Deployment and a dedicated demo Pod, making the application self-healing and traffic-safe during failure conditions and slow restarts.
+
+**What this phase covers:**
+- How the **Startup Probe** blocks liveness and readiness checks until slow initialization completes, preventing premature restarts.
+- How the **Liveness Probe** detects irrecoverable bad states (deadlocks, frozen handlers) and triggers an automatic container restart.
+- How the **Readiness Probe** removes an unhealthy or not-yet-ready Pod from the Service endpoint list — protecting users without restarting the container.
+- The critical behavioral difference: liveness failure = **restart**, readiness failure = **stop traffic**.
+- How both probes together handle the real-world scenario of an app entering a bad state and then taking time to re-initialize after restart.
+
+**Key principle:** *Kubernetes only knows a container process is running — not whether the application inside it is healthy. Health probes bridge that gap, making self-healing possible at the application level.*
+
+- *Docs:* [Kubernetes Health Probes](docs/Kubernetes-Health-Probes.md).
+- *Manifests:* [`k8s/basics/backend-deployment.yaml`](k8s/basics/backend-deployment.yaml) (updated with probes), [`k8s/basics/probe-demo-pod.yaml`](k8s/basics/probe-demo-pod.yaml) (demo).
+
+#### 📊 Health Probes Diagram
+
+![Kubernetes Health Probes Diagram](docs/k8s-health-probes-diagram.png)
+
+```
+startupProbe → PASSES → livenessProbe + readinessProbe both activate
+                              ↓                        ↓
+                         FAIL →                   FAIL →
+                      RESTART container       REMOVE FROM SERVICE
+                      (fixes bad state)       (protects users,
+                                               no restart)
+```
+
+#### 💡 Why Both Probes Together
+
+Liveness alone restarts the container but sends traffic during the recovery window. Readiness alone stops traffic but never fixes the deadlock. Together: liveness restarts the broken container, readiness protects users while it re-initializes, and traffic resumes automatically when the app is actually ready.
+
+> For probe configuration details, failure demonstrations, and the full scenario walkthrough, see [Kubernetes Health Probes](docs/Kubernetes-Health-Probes.md).
+
 ---
 
 ## 💻 Developer Guide: Running the K8s Environment
@@ -275,9 +309,10 @@ kubectl port-forward service/aerostore-frontend-service 8080:80
 ├── k8s/              # Kubernetes declarative YAML manifests
 │   ├── kind-cluster-config.yaml
 │   └── basics/
-│       ├── app-configmap.yaml           ← NEW: Non-sensitive app configuration
-│       ├── app-secret.yaml              ← NEW: Sensitive credentials (placeholders)
-│       ├── backend-deployment.yaml      ← NEW: Backend using envFrom injection
+│       ├── probe-demo-pod.yaml          ← NEW: Demo pod with all three probes
+│       ├── app-configmap.yaml
+│       ├── app-secret.yaml
+│       ├── backend-deployment.yaml      (updated: probes + resource limits added)
 │       ├── backend-service.yaml
 │       ├── curl-client-pod.yaml
 │       ├── nginx-deployment.yaml
@@ -286,8 +321,10 @@ kubectl port-forward service/aerostore-frontend-service 8080:80
 │       └── nginx-replicaset.yaml
 ├── scripts/          # Automation scripts (e.g., manage-k8s-cluster.sh)
 ├── docs/             # Extensive documentation on DevOps concepts
-│   ├── Kubernetes-ConfigMaps-And-Secrets.md           ← NEW: Config management docs
-│   ├── k8s-configmap-secret-diagram.png               ← NEW: Injection diagram
+│   ├── Kubernetes-Health-Probes.md                    ← NEW: Health probes docs
+│   ├── k8s-health-probes-diagram.png                  ← NEW: Probes diagram
+│   ├── Kubernetes-ConfigMaps-And-Secrets.md
+│   ├── k8s-configmap-secret-diagram.png
 │   ├── Kubernetes-Service-Discovery-And-Networking.md
 │   ├── k8s-service-discovery-diagram.png
 │   ├── CICD-Execution-Model-And-Responsibilities.md

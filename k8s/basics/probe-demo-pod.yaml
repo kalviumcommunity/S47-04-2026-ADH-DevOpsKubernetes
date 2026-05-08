@@ -1,0 +1,97 @@
+# k8s/basics/probe-demo-pod.yaml
+#
+# Health Probe Demonstration Pod
+#
+# This Pod is specifically designed to demonstrate liveness and readiness
+# probe behavior in isolation, without affecting production workloads.
+#
+# It runs nginx (which responds 200 OK by default) to show a HEALTHY state,
+# and documents exactly what commands to run to SIMULATE failures.
+#
+# ─────────────────────────────────────────────────────────────────────────
+# DEMONSTRATING PROBE FAILURES (run these after applying this pod):
+#
+# 1. Observe healthy state:
+#    kubectl get pods probe-demo -w
+#
+# 2. Simulate a READINESS failure (stop traffic without restarting):
+#    kubectl exec probe-demo -- mv /usr/share/nginx/html/index.html /tmp/
+#    # readinessProbe GET / now returns 403 → Pod removed from Service
+#    # Watch: kubectl get endpoints (pod IP disappears)
+#    # Restore: kubectl exec probe-demo -- mv /tmp/index.html /usr/share/nginx/html/
+#
+# 3. Observe LIVENESS failure behavior:
+#    kubectl describe pod probe-demo
+#    # Look at: "Liveness probe failed" events and Restart Count
+#    # A liveness failure causes kubelet to kill + restart the container
+#
+# 4. Check probe events:
+#    kubectl describe pod probe-demo | grep -A5 "Liveness\|Readiness"
+# ─────────────────────────────────────────────────────────────────────────
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: probe-demo
+  labels:
+    app: probe-demo
+    purpose: health-probe-demonstration
+spec:
+  containers:
+    - name: probe-demo
+      image: nginx:1.16.1
+      ports:
+        - containerPort: 80
+
+      # ─────────────────────────────────────────────────────────────────
+      # STARTUP PROBE — "Has the app finished initializing?"
+      # Disables liveness and readiness until this passes.
+      # Gives nginx up to 60 seconds (6 * 10s) to start.
+      # ─────────────────────────────────────────────────────────────────
+      startupProbe:
+        httpGet:
+          path: /
+          port: 80
+        failureThreshold: 6
+        periodSeconds: 10
+
+      # ─────────────────────────────────────────────────────────────────
+      # LIVENESS PROBE — "Is the container alive?"
+      # Failure action: RESTART THE CONTAINER
+      # nginx serves 200 OK at / — if it stops responding, something is wrong.
+      # After 3 failures (45 seconds): kubelet kills and restarts the container.
+      # ─────────────────────────────────────────────────────────────────
+      livenessProbe:
+        httpGet:
+          path: /
+          port: 80
+        initialDelaySeconds: 5
+        periodSeconds: 15
+        timeoutSeconds: 3
+        failureThreshold: 3
+        successThreshold: 1
+
+      # ─────────────────────────────────────────────────────────────────
+      # READINESS PROBE — "Is the container ready to receive traffic?"
+      # Failure action: REMOVE FROM SERVICE ENDPOINTS (no restart)
+      # Uses a shorter period so removal from traffic is faster.
+      # After 3 failures (30 seconds): removed from load balancer.
+      # When healthy again: automatically re-added to Service.
+      # ─────────────────────────────────────────────────────────────────
+      readinessProbe:
+        httpGet:
+          path: /
+          port: 80
+        initialDelaySeconds: 3
+        periodSeconds: 10
+        timeoutSeconds: 2
+        failureThreshold: 3
+        successThreshold: 1
+
+      resources:
+        requests:
+          cpu: "50m"
+          memory: "32Mi"
+        limits:
+          cpu: "100m"
+          memory: "64Mi"
