@@ -302,6 +302,43 @@ Resource configuration is not optional in a shared cluster — it is the contrac
 
 > For the full CPU vs memory enforcement analysis, LimitRange and ResourceQuota details, and the noisy neighbor scenario walkthrough, see [Kubernetes Resource Management](docs/Kubernetes-Resource-Management.md).
 
+### Phase 11: Scaling — Manual Scaling & Horizontal Pod Autoscaler ✅ *(NEW)*
+We implemented both manual scaling and automatic metric-driven scaling via HPA, demonstrating how Kubernetes elastically adjusts the number of running Pods in response to changing traffic load.
+
+**What this phase covers:**
+- How **manual scaling** (`kubectl scale --replicas=N`) directly and immediately adjusts the Deployment replica count — and when this is the right tool.
+- How the **Horizontal Pod Autoscaler (HPA)** continuously watches CPU metrics via the Metrics Server and automatically adjusts replica count to keep average CPU at the target.
+- The **HPA decision formula:** `desiredReplicas = ceil(currentReplicas × currentCPU / targetCPU)` — a concrete, predictable calculation.
+- How **stabilization windows** prevent thrashing: fast scale-up (30s) vs. slow scale-down (5 min).
+- How **minReplicas** and **maxReplicas** protect the application (always available) and the cluster (cannot exhaust resources).
+- Why targeting 50% CPU (not 80%+) leaves headroom for traffic spikes while new Pods are being scheduled.
+
+**Key principle:** *Manual scaling is deliberate and immediate. HPA is automatic and continuous. Production systems need both: HPA for normal traffic variability, manual scaling for planned events and incident override.*
+
+- *Docs:* [Kubernetes Scaling & HPA](docs/Kubernetes-Scaling-And-HPA.md).
+- *Manifests:* [`k8s/basics/backend-hpa.yaml`](k8s/basics/backend-hpa.yaml), [`k8s/basics/scaling-demo.md`](k8s/basics/scaling-demo.md).
+
+#### 📊 Scaling & HPA Diagram
+
+![Kubernetes Scaling and HPA Diagram](docs/k8s-scaling-hpa-diagram.png)
+
+```
+Manual:  kubectl scale --replicas=5 → immediate, human-driven
+
+HPA:     CPU 80% / target 50%
+         → desiredReplicas = ceil(2 × 80/50) = 4
+         → Deployment updated automatically
+         → 2 new Pods scheduled and ready (~60s)
+         → CPU returns to ~50% per Pod
+         Traffic drops → wait 5min → scale back to minReplicas=2
+```
+
+#### 💡 Reflection: Autoscaling as a First-Class Reliability Tool
+
+HPA is not just a cost-saving feature — it is a reliability mechanism. Without it, traffic spikes that exceed current capacity result in slow or failed requests. With HPA and a well-chosen CPU target, the cluster self-adjusts within the time it takes for a new Pod to become ready, keeping response times stable without any human intervention.
+
+> For the full HPA formula walkthrough, scenario analysis, and manual vs HPA comparison, see [Kubernetes Scaling & HPA](docs/Kubernetes-Scaling-And-HPA.md).
+
 ---
 
 ## 💻 Developer Guide: Running the K8s Environment
@@ -324,11 +361,12 @@ kubectl apply -f k8s/basics/app-secret.yaml
 # Apply namespace resource policy (LimitRange + ResourceQuota)
 kubectl apply -f k8s/basics/namespace-resource-policy.yaml
 
-# Apply Deployments and Services
+# Apply Deployments, Services, and HPA
 kubectl apply -f k8s/basics/nginx-deployment.yaml
 kubectl apply -f k8s/basics/nginx-service.yaml
 kubectl apply -f k8s/basics/backend-deployment.yaml
 kubectl apply -f k8s/basics/backend-service.yaml
+kubectl apply -f k8s/basics/backend-hpa.yaml
 ```
 
 ### 3. Expose to Localhost
@@ -348,8 +386,10 @@ kubectl port-forward service/aerostore-frontend-service 8080:80
 ├── k8s/              # Kubernetes declarative YAML manifests
 │   ├── kind-cluster-config.yaml
 │   └── basics/
-│       ├── resource-demo-pod.yaml       ← NEW: Pod with requests + limits demo
-│       ├── namespace-resource-policy.yaml ← NEW: LimitRange + ResourceQuota
+│       ├── backend-hpa.yaml             ← NEW: HPA with CPU autoscaling
+│       ├── scaling-demo.md              ← NEW: Manual + HPA demo commands
+│       ├── resource-demo-pod.yaml
+│       ├── namespace-resource-policy.yaml
 │       ├── probe-demo-pod.yaml
 │       ├── app-configmap.yaml
 │       ├── app-secret.yaml
@@ -362,8 +402,10 @@ kubectl port-forward service/aerostore-frontend-service 8080:80
 │       └── nginx-replicaset.yaml
 ├── scripts/          # Automation scripts (e.g., manage-k8s-cluster.sh)
 ├── docs/             # Extensive documentation on DevOps concepts
-│   ├── Kubernetes-Resource-Management.md              ← NEW: Resource management docs
-│   ├── k8s-resource-management-diagram.png            ← NEW: Resource diagram
+│   ├── Kubernetes-Scaling-And-HPA.md                  ← NEW: Scaling docs
+│   ├── k8s-scaling-hpa-diagram.png                    ← NEW: HPA diagram
+│   ├── Kubernetes-Resource-Management.md
+│   ├── k8s-resource-management-diagram.png
 │   ├── Kubernetes-Health-Probes.md
 │   ├── k8s-health-probes-diagram.png
 │   ├── Kubernetes-ConfigMaps-And-Secrets.md
