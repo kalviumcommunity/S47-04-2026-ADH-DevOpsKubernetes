@@ -195,6 +195,43 @@ Without Services, any Pod restart would break inter-component communication beca
 
 > For the full DNS resolution flow, verification commands, and scalability analysis, see [Kubernetes Service Discovery & Networking](docs/Kubernetes-Service-Discovery-And-Networking.md).
 
+### Phase 8: ConfigMaps & Secrets — Secure Configuration Management ✅ *(NEW)*
+We externalized all application configuration and sensitive credentials from source code into Kubernetes-native objects — ConfigMaps and Secrets — and demonstrated how they are injected into running Pods at startup.
+
+**What this phase covers:**
+- Why hardcoding configuration and credentials in source code or Dockerfiles is a security and maintainability failure.
+- How **ConfigMaps** store non-sensitive key-value configuration (`APP_ENV`, `LOG_LEVEL`, `APP_PORT`, service URLs) outside the application code.
+- How **Secrets** store sensitive credentials (`DB_PASSWORD`, `DB_USER`, `DB_HOST`) with base64 encoding and RBAC-restricted access.
+- How Kubernetes injects both into Pods as environment variables using `envFrom` (bulk) and `valueFrom` (selective) — with no code changes required.
+- How the **same Docker image** can be deployed to dev, staging, and production with different configurations by simply applying different ConfigMaps and Secrets.
+
+**Key principle:** *The application image is environment-agnostic. Configuration is the variable — not the code.* This is the foundation of scalable, secure, multi-environment deployments.
+
+- *Docs:* [Kubernetes ConfigMaps & Secrets](docs/Kubernetes-ConfigMaps-And-Secrets.md).
+- *Manifests:* [`k8s/basics/app-configmap.yaml`](k8s/basics/app-configmap.yaml), [`k8s/basics/app-secret.yaml`](k8s/basics/app-secret.yaml), [`k8s/basics/backend-deployment.yaml`](k8s/basics/backend-deployment.yaml).
+
+#### 📊 Configuration Injection Diagram
+
+![ConfigMap and Secret Injection Diagram](docs/k8s-configmap-secret-diagram.png)
+
+```
+ConfigMap: aerostore-app-config     Secret: aerostore-db-secret
+  APP_ENV=production                  DB_HOST=      ••••••••
+  APP_PORT=3001                       DB_USER=      ••••••••
+  LOG_LEVEL=info                      DB_PASSWORD=  ••••••••
+        ↓ envFrom configMapRef             ↓ envFrom secretRef
+            └────────────────────────┘
+                    aerostore-backend Pod
+              process.env.APP_ENV, DB_PASSWORD...
+              (no hardcoded values, same image for all envs)
+```
+
+#### 💡 Reflection: Configuration vs Code
+
+Externalizing configuration separates *what the app does* from *where and how it runs*. A developer can change a database connection string or flip a feature flag with a single `kubectl apply` — no rebuild, no new Docker tag, no deployment pipeline required. And because Secrets are managed by the platform with RBAC, developers write code without ever seeing production credentials.
+
+> For the full injection patterns, verification steps, security analysis, and multi-environment strategy, see [Kubernetes ConfigMaps & Secrets](docs/Kubernetes-ConfigMaps-And-Secrets.md).
+
 ---
 
 ## 💻 Developer Guide: Running the K8s Environment
@@ -210,8 +247,14 @@ We have a helper script to easily create the `kind` cluster:
 ### 2. Apply the Workloads & Networking
 Deploy the application manifests and all Services:
 ```bash
+# Apply ConfigMap and Secret first (Pods depend on them)
+kubectl apply -f k8s/basics/app-configmap.yaml
+kubectl apply -f k8s/basics/app-secret.yaml
+
+# Apply Deployments and Services
 kubectl apply -f k8s/basics/nginx-deployment.yaml
 kubectl apply -f k8s/basics/nginx-service.yaml
+kubectl apply -f k8s/basics/backend-deployment.yaml
 kubectl apply -f k8s/basics/backend-service.yaml
 ```
 
@@ -232,16 +275,21 @@ kubectl port-forward service/aerostore-frontend-service 8080:80
 ├── k8s/              # Kubernetes declarative YAML manifests
 │   ├── kind-cluster-config.yaml
 │   └── basics/
-│       ├── backend-service.yaml         ← NEW: ClusterIP service for DNS discovery
-│       ├── curl-client-pod.yaml         ← NEW: Debug pod for discovery verification
+│       ├── app-configmap.yaml           ← NEW: Non-sensitive app configuration
+│       ├── app-secret.yaml              ← NEW: Sensitive credentials (placeholders)
+│       ├── backend-deployment.yaml      ← NEW: Backend using envFrom injection
+│       ├── backend-service.yaml
+│       ├── curl-client-pod.yaml
 │       ├── nginx-deployment.yaml
 │       ├── nginx-service.yaml
 │       ├── nginx-pod.yaml
 │       └── nginx-replicaset.yaml
 ├── scripts/          # Automation scripts (e.g., manage-k8s-cluster.sh)
 ├── docs/             # Extensive documentation on DevOps concepts
-│   ├── Kubernetes-Service-Discovery-And-Networking.md ← NEW: Service discovery docs
-│   ├── k8s-service-discovery-diagram.png              ← NEW: Discovery diagram
+│   ├── Kubernetes-ConfigMaps-And-Secrets.md           ← NEW: Config management docs
+│   ├── k8s-configmap-secret-diagram.png               ← NEW: Injection diagram
+│   ├── Kubernetes-Service-Discovery-And-Networking.md
+│   ├── k8s-service-discovery-diagram.png
 │   ├── CICD-Execution-Model-And-Responsibilities.md
 │   ├── cicd-execution-diagram.png
 │   ├── Kubernetes-Workload-Lifecycle.md
