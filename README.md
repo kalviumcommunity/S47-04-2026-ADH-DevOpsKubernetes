@@ -644,7 +644,44 @@ on:
 - *Docs:* [GitHub Actions CI](docs/GitHub-Actions-CI.md).
 - *Workflow:* [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
+### Phase 21: CI/CD Pipeline Design — Stages and Separation ✅ *(NEW)*
+We documented the complete AeroStore CI/CD pipeline architecture, explicitly defining 11 stages in order, separating CI from CD responsibilities, and implementing the CD workflow that delivers verified code to staging and production.
+
+**The CI/CD boundary:**
+
+| | CI (every commit) | CD (every merge to main) |
+|---|---|---|
+| **Question** | Is the code correct? | Can we safely deliver it? |
+| **Produces** | Pass/fail signal | Running application |
+| **On failure** | Fix before merging | Rollback |
+
+**11 Pipeline stages:**
+
+| # | Stage | Type | Gate enforced |
+|---|---|---|---|
+| 1 | Code commit | CI | Branch model |
+| 2 | Webhook trigger | CI | Auto, non-optional |
+| 3 | Backend build | CI | Tests skip if this fails |
+| 4 | Automated tests | CI | Docker skips if this fails |
+| 5 | Frontend build | CI | Docker skips if this fails |
+| 6 | Docker image build | CI | `push: false` — validate only |
+| ─ | **MERGE GATE** | ─ | CI must be green to merge |
+| 7 | Image push to registry | CD | main branch only, SHA-tagged |
+| 8 | Deploy to staging | CD | helm upgrade + rollout verify |
+| 9 | Staging approval gate | CD | Manual reviewer required |
+| 10 | Deploy to production | CD | helm upgrade + rollout verify |
+| 11 | Post-deploy verification | CD | Rollback if fails |
+
+- *Design doc:* [CICD-Pipeline-Design.md](docs/CICD-Pipeline-Design.md).
+- *CD workflow:* [`.github/workflows/cd.yml`](.github/workflows/cd.yml).
+
+#### 📊 Pipeline Diagram
+
+![AeroStore CI/CD Pipeline Stages](docs/cicd-pipeline-stages-diagram.png)
+
 ---
+
+
 
 
 ## 💻 Developer Guide: Running the K8s Environment
