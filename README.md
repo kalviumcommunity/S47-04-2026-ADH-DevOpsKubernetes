@@ -416,6 +416,36 @@ Managing raw YAML files is managing files. Helm shifts the model to managing **r
 
 > For the full chart structure walkthrough, values merging explanation, Helm vs kubectl comparison, and scenario analysis, see [Kubernetes Helm Package Management](docs/Kubernetes-Helm-Package-Management.md).
 
+### Phase 14: Custom Helm Chart — Reusable & Environment-Aware Packaging ✅ *(NEW)*
+We extended the AeroStore Helm chart with full three-environment support (dev/staging/prod), a `NOTES.txt` post-install guide, and a `values.schema.json` that validates configuration before it reaches the cluster — completing the chart as a production-grade, reusable package.
+
+**What this phase adds:**
+- **`values-staging.yaml`** — completes the three-tier environment setup: dev (1 replica, no HPA), staging (2 replicas, HPA on, validates prod config), prod (5 replicas, wide HPA range). Each file only contains differences from `values.yaml` defaults.
+- **`templates/NOTES.txt`** — a Helm standard that prints environment-aware next steps after every `helm install` or `helm upgrade`, using `{{- if .Values.autoscaling.enabled }}` conditionals to show HPA status.
+- **`values.schema.json`** — a JSON Schema that Helm checks automatically before rendering any templates. Misconfigured values (wrong types, invalid enum values, out-of-range replica counts) are rejected immediately with a clear error, before any resources reach the cluster.
+- **`Chart.yaml` v0.2.0** — version bump reflecting the new additions, plus `maintainers` and `keywords` fields.
+
+**Key principle:** *A custom Helm chart is not just a collection of YAML templates — it is a validated, documented, environment-aware package. `values.schema.json` prevents bad configuration. `NOTES.txt` guides operators after every install. Environment-specific values files eliminate per-environment YAML duplication entirely.*
+
+- *Chart:* [`helm/aerostore/`](helm/aerostore/) — now v0.2.0 with staging support and schema validation.
+- *Demo:* [`helm/aerostore/helm-demo.md`](helm/aerostore/helm-demo.md).
+
+#### 💡 How Values Drive Everything — Three Environments, One Chart
+
+```
+values.yaml (defaults: replicas=3, HPA on, logLevel=info)
+    │
+    ├── values-dev.yaml     overrides: replicas=1, HPA off, logLevel=debug
+    ├── values-staging.yaml overrides: replicas=2, HPA on (max=5), logLevel=info
+    └── values-prod.yaml    overrides: replicas=5, HPA on (max=12), logLevel=warn
+
+helm install aerostore-dev  ... --values values-dev.yaml     → 1 replica, no HPA
+helm install aerostore-staging ... --values values-staging.yaml → 2 replicas, HPA
+helm install aerostore-prod ... --values values-prod.yaml    → 5 replicas, HPA
+
+Same 5 template files. Three distinct cluster states.
+```
+
 ---
 
 ## 💻 Developer Guide: Running the K8s Environment
@@ -470,13 +500,16 @@ kubectl port-forward service/aerostore-frontend-service 8080:80
 ├── backend/          # Express API source code
 ├── frontend/         # React SPA source code
 ├── helm/             # Helm chart for the AeroStore application
-│   └── aerostore/                           ← NEW: Complete Helm chart
-│       ├── Chart.yaml                       (chart metadata)
+│   └── aerostore/                           (v0.2.0)
+│       ├── Chart.yaml                       (chart metadata, version 0.2.0)
 │       ├── values.yaml                      (default values)
-│       ├── values-dev.yaml                  (dev overrides)
-│       ├── values-prod.yaml                 (prod overrides)
+│       ├── values-dev.yaml                  (dev overrides: 1 replica, no HPA)
+│       ├── values-staging.yaml              ← NEW: staging overrides (2 replicas)
+│       ├── values-prod.yaml                 (prod overrides: 5 replicas)
+│       ├── values.schema.json               ← NEW: values validation schema
 │       ├── helm-demo.md                     (demo commands)
 │       └── templates/
+│           ├── NOTES.txt                    ← NEW: post-install guide (env-aware)
 │           ├── _helpers.tpl                 (named templates)
 │           ├── deployment.yaml
 │           ├── service.yaml

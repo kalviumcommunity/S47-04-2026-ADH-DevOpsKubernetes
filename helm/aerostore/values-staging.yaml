@@ -1,0 +1,40 @@
+# helm/aerostore/values-staging.yaml
+#
+# STAGING ENVIRONMENT OVERRIDES
+#
+# Only the values that differ from defaults (values.yaml) are specified here.
+# Helm merges these on top of values.yaml — staging-specific values win.
+#
+# Usage:
+#   helm install aerostore-staging ./helm/aerostore \
+#     --values helm/aerostore/values-staging.yaml \
+#     --namespace staging
+#
+# Staging sits between dev and production:
+#   - More replicas than dev, fewer than prod
+#   - HPA enabled to verify autoscaling config before prod
+#   - Info-level logging (not debug noise, not prod silence)
+#   - Same image tag flow as prod — staging validates prod images
+
+image:
+  tag: "1.17.0"         # Staging always matches the prod-candidate image tag
+
+replicaCount: 2         # 2 replicas in staging — tests HA without full prod cost
+
+autoscaling:
+  enabled: true         # Verify HPA behavior before promoting to prod
+  minReplicas: 2
+  maxReplicas: 5        # Lower ceiling than prod — staging cluster is smaller
+  targetCPUUtilizationPercentage: 60
+
+config:
+  appEnv: "staging"
+  logLevel: "info"      # Enough detail to debug without overwhelming log storage
+
+resources:
+  requests:
+    cpu: "100m"         # Same as prod requests — validates resource fit early
+    memory: "64Mi"
+  limits:
+    cpu: "300m"
+    memory: "192Mi"

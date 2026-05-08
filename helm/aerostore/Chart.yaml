@@ -8,10 +8,28 @@ description: |
   to manage k8s/basics/*.yaml files. With Helm, the entire application is
   installed, upgraded, and rolled back as a single atomic release.
 
+  Supports three environment configurations out of the box:
+    - values-dev.yaml     → development  (1 replica, no HPA, debug logging)
+    - values-staging.yaml → staging      (2 replicas, HPA on, info logging)
+    - values-prod.yaml    → production   (5 replicas, HPA on, warn logging)
+
+  Includes values schema validation (values.schema.json) to catch
+  misconfigured values before they reach the cluster.
+
 type: application
 
-# Chart version — bump this whenever the chart structure changes
-version: 0.1.0
+# Chart version — bump whenever the chart structure or templates change
+# Follows SemVer: MAJOR.MINOR.PATCH
+version: 0.2.0
 
-# Application version — the Docker image tag being deployed
+# Application version — the Docker image tag being deployed by default
 appVersion: "1.17.0"
+
+maintainers:
+  - name: AeroStore DevOps
+    email: devops@aerostore.example.com
+
+keywords:
+  - nginx
+  - web
+  - aerostore
