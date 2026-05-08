@@ -1,0 +1,52 @@
+# k8s/basics/app-configmap.yaml
+#
+# ConfigMap: aerostore-app-config
+#
+# PURPOSE:
+#   Stores non-sensitive application configuration as key-value pairs.
+#   These values are injected into the backend Pod as environment variables
+#   at startup time — no values are hardcoded in the application source code
+#   or in the Deployment manifest itself.
+#
+# RULE: ConfigMaps are for NON-SENSITIVE data only.
+#   ✅ Use ConfigMaps for: ports, log levels, API URLs, feature flags, env names
+#   ❌ Never put passwords, tokens, or private keys in a ConfigMap
+#
+# CONSUMPTION:
+#   This ConfigMap is referenced in backend-deployment.yaml using:
+#     envFrom:
+#       - configMapRef:
+#           name: aerostore-app-config
+#
+# MULTI-ENVIRONMENT USAGE:
+#   The same Docker image is deployed to dev, staging, and production.
+#   Each environment gets its own ConfigMap with environment-specific values.
+#   The app image never changes — only the configuration changes.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aerostore-app-config
+  labels:
+    app: aerostore
+    component: config
+data:
+  # Application environment identifier
+  APP_ENV: "production"
+
+  # Port the backend server listens on
+  APP_PORT: "3001"
+
+  # Log verbosity level
+  LOG_LEVEL: "info"
+
+  # Internal service URL — uses DNS-based service name (not an IP)
+  # This is why service discovery (previous phase) matters: we reference
+  # the stable service name here, not a Pod IP.
+  API_BASE_URL: "http://aerostore-backend-service:3001"
+
+  # Maximum number of database connections in the pool
+  DB_POOL_SIZE: "10"
+
+  # Application display name (used in logs/health endpoints)
+  APP_NAME: "AeroStore Backend"

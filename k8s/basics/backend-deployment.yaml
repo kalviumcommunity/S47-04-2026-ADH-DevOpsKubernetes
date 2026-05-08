@@ -1,0 +1,72 @@
+# k8s/basics/backend-deployment.yaml
+#
+# Backend Deployment: aerostore-backend
+#
+# This Deployment demonstrates how to consume configuration and secrets
+# from Kubernetes-native sources (ConfigMap and Secret) instead of
+# hardcoding values in source code or manifests.
+#
+# CONFIGURATION INJECTION PATTERN:
+#   Two envFrom blocks inject all key-value pairs from:
+#     1. ConfigMap (aerostore-app-config) → non-sensitive config
+#     2. Secret (aerostore-db-secret)     → sensitive credentials
+#
+#   Inside the container, these are accessible as standard environment
+#   variables: process.env.APP_PORT, process.env.DB_PASSWORD, etc.
+#
+# BENEFIT:
+#   The Docker image (kalviaki0/devops-backend:latest) is environment-agnostic.
+#   The SAME image can be deployed to dev, staging, and production by simply
+#   applying different ConfigMaps and Secrets — no code changes, no rebuilds.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aerostore-backend
+  labels:
+    app: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+        - name: backend
+          # Using nginx as a stand-in — in production this would be the actual
+          # Node.js backend image (kalviaki0/devops-backend:commit-sha)
+          image: nginx:1.16.1
+          ports:
+            - containerPort: 80
+
+          # ─────────────────────────────────────────────────────────────────
+          # CONFIGURATION INJECTION
+          # envFrom injects ALL key-value pairs from the referenced source
+          # as environment variables in this container.
+          # ─────────────────────────────────────────────────────────────────
+          envFrom:
+            # 1. Non-sensitive config from ConfigMap
+            #    Injects: APP_ENV, APP_PORT, LOG_LEVEL, API_BASE_URL,
+            #             DB_POOL_SIZE, APP_NAME
+            - configMapRef:
+                name: aerostore-app-config
+
+            # 2. Sensitive credentials from Secret
+            #    Injects: DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT
+            - secretRef:
+                name: aerostore-db-secret
+
+          # ─────────────────────────────────────────────────────────────────
+          # SELECTIVE INJECTION (alternative pattern)
+          # Use valueFrom to inject a single specific key instead of all keys.
+          # Useful when you only need one value from a large ConfigMap/Secret.
+          # ─────────────────────────────────────────────────────────────────
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace   # Inject the Pod's own namespace
