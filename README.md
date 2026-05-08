@@ -123,6 +123,42 @@ Kubernetes focuses on maintaining desired state rather than guaranteeing applica
 
 > For full details including rolling update mechanics, probe configurations, and the failure case study, see [Kubernetes Workload Lifecycle](docs/Kubernetes-Workload-Lifecycle.md).
 
+### Phase 6: CI/CD Execution Model & Responsibility Boundaries ✅ *(NEW)*
+We documented the complete CI/CD execution model — explaining where each pipeline action happens, who owns it, and why clean responsibility boundaries are essential for safe and predictable production systems.
+
+**What this phase covers:**
+- What **CI** is responsible for (validate + package) vs. what **CD** is responsible for (deploy + deliver), and what each layer must never do.
+- A complete **responsibility map** showing where every action — writing code, running tests, building images, deploying, self-healing — actually occurs.
+- Why mixing application logic, pipeline logic, and deployment logic creates fragile systems with large blast radii, unsafe PRs, and unreliable rollbacks.
+- How modifying CI test steps, build steps, or CD deployment steps produces different downstream effects, and how to reason about these before merging.
+- The principle that **CI/CD pipelines orchestrate work** — they do not replace application logic or infrastructure behavior.
+
+**Key principle:** *Pipelines are automation glue — they coordinate handoffs between layers, but they must never absorb the logic that belongs to those layers.* Clean separation means every failure has a single, identifiable owner.
+
+- *Docs:* [CI/CD Execution Model & Responsibilities](docs/CICD-Execution-Model-And-Responsibilities.md).
+
+#### 📊 CI/CD Execution Model Diagram
+
+![CI/CD Execution Model Diagram](docs/cicd-execution-diagram.png)
+
+```
+Code Change (Developer)
+        ↓
+CI Pipeline (Tests + Build + Push)
+        ↓
+Docker Image (Artifact in Registry)
+        ↓
+CD Pipeline (Deploy)
+        ↓
+Kubernetes / Cloud Infrastructure (Run + Heal)
+```
+
+#### 💡 Reflection: Why Pipelines Must Orchestrate, Not Replace
+
+CI/CD pipelines are coordination tools — they automate the sequencing and triggering of well-defined operations across layers. When a pipeline starts containing business rules or infrastructure provisioning scripts, it collapses the boundaries that make a system safe. Clear ownership means: a test failure belongs to the application layer, a deployment failure belongs to the CD layer, and a container restart belongs to Kubernetes. When those responsibilities blur, debugging becomes archaeology.
+
+> For full details including the blast radius analysis, pipeline change impact assessment, and the responsibility boundary case study, see [CI/CD Execution Model Documentation](docs/CICD-Execution-Model-And-Responsibilities.md).
+
 ---
 
 ## 💻 Developer Guide: Running the K8s Environment
@@ -161,8 +197,10 @@ kubectl port-forward service/aerostore-frontend-service 8080:80
 │   └── basics/       # Pods, Deployments, and Services
 ├── scripts/          # Automation scripts (e.g., manage-k8s-cluster.sh)
 ├── docs/             # Extensive documentation on DevOps concepts
-│   ├── Kubernetes-Workload-Lifecycle.md     ← NEW: Full lifecycle explanation
-│   ├── k8s-lifecycle-diagram.png            ← NEW: Lifecycle diagram
+│   ├── CICD-Execution-Model-And-Responsibilities.md ← NEW: CI vs CD responsibilities
+│   ├── cicd-execution-diagram.png                   ← NEW: Execution model diagram
+│   ├── Kubernetes-Workload-Lifecycle.md
+│   ├── k8s-lifecycle-diagram.png
 │   ├── Artifact-Flow-Source-To-Cluster.md
 │   ├── artifact-flow-diagram.png
 │   ├── CICD-Pipeline-Plan.md
