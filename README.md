@@ -81,6 +81,48 @@ Deploying immutable Docker images instead of raw source code is fundamentally sa
 
 > For the full reflection and a detailed production bug case study, see [Artifact Flow Documentation](docs/Artifact-Flow-Source-To-Cluster.md#8-reflection--why-immutable-artifacts-are-safer).
 
+### Phase 5: Kubernetes Workload Lifecycle ✅ *(NEW)*
+We documented the complete internal lifecycle of how Kubernetes manages application workloads — from a Deployment definition to running, self-healing Pods.
+
+**What this phase covers:**
+- How a **Deployment** defines desired state, creates a **ReplicaSet**, which in turn creates and manages **Pods**.
+- How the **kube-scheduler** assigns Pods to Nodes based on resource availability.
+- How Kubernetes **continuously reconciles** desired state vs. current state — automatically restarting crashed Pods and rescheduling on node failure.
+- How **rolling updates** work: new Pods are created with the new image while old Pods are gradually terminated, maintaining availability throughout.
+- How **health probes** (Liveness, Readiness, Startup) influence Pod lifecycle and protect traffic from reaching unhealthy containers.
+- How **CPU/memory requests and limits** affect scheduling decisions and runtime behavior.
+- Common **Pod failure states**: `Pending`, `CrashLoopBackOff`, `ImagePullBackOff`, `OOMKilled` — causes, meaning, and automatic Kubernetes responses.
+
+**Key principle:** *Kubernetes manages desired state, not application correctness.* The platform guarantees that the right number of containers are always running — but it's the application's responsibility to be correct. This boundary is what makes self-healing automation possible at scale.
+
+- *Docs:* [K8s Workload Lifecycle](docs/Kubernetes-Workload-Lifecycle.md).
+
+#### 📊 Kubernetes Lifecycle Diagram
+
+![Kubernetes Lifecycle Diagram](docs/k8s-lifecycle-diagram.png)
+
+```
+Deployment (desired state)
+       ↓
+  ReplicaSet
+       ↓
+  Pod Creation
+       ↓
+   Scheduling
+       ↓
+ Container Start
+       ↓
+ Health Checks
+       ↓
+Running / Restart / Reschedule
+```
+
+#### 💡 Reflection: Desired State vs. Application Correctness
+
+Kubernetes focuses on maintaining desired state rather than guaranteeing application correctness because the platform's responsibility is infrastructure automation — not business logic. Self-healing behavior (restarting crashed pods, rescheduling on node failure) is only possible because it is declarative and stateless from the platform's perspective. If Kubernetes tried to validate whether your application was *correct*, it would need to understand your domain — an impossible and unscalable boundary. Instead, it trusts health probes (defined by the developer) as the signal for correctness, and automates all recovery actions from there. This clean separation between platform responsibility and application responsibility is what makes Kubernetes reliable at scale.
+
+> For full details including rolling update mechanics, probe configurations, and the failure case study, see [Kubernetes Workload Lifecycle](docs/Kubernetes-Workload-Lifecycle.md).
+
 ---
 
 ## 💻 Developer Guide: Running the K8s Environment
@@ -119,8 +161,10 @@ kubectl port-forward service/aerostore-frontend-service 8080:80
 │   └── basics/       # Pods, Deployments, and Services
 ├── scripts/          # Automation scripts (e.g., manage-k8s-cluster.sh)
 ├── docs/             # Extensive documentation on DevOps concepts
-│   ├── Artifact-Flow-Source-To-Cluster.md   ← NEW: Full artifact flow explanation
-│   ├── artifact-flow-diagram.png            ← NEW: Visual flow diagram
+│   ├── Kubernetes-Workload-Lifecycle.md     ← NEW: Full lifecycle explanation
+│   ├── k8s-lifecycle-diagram.png            ← NEW: Lifecycle diagram
+│   ├── Artifact-Flow-Source-To-Cluster.md
+│   ├── artifact-flow-diagram.png
 │   ├── CICD-Pipeline-Plan.md
 │   ├── Container-Registry-Tagging-And-Distribution.md
 │   ├── Docker-Architecture-Images-Layers-Containers.md
