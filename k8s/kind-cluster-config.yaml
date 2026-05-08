@@ -1,11 +1,39 @@
 # k8s/kind-cluster-config.yaml
 # Configuration for a local Kubernetes cluster using kind (Kubernetes IN Docker)
+#
+# INGRESS SUPPORT:
+#   This config includes extraPortMappings so the nginx Ingress Controller can
+#   bind to host ports 80 and 443. Without these mappings, http://localhost
+#   would not reach the cluster.
+#
+#   The ingress-ready=true node label is required by the kind-specific
+#   nginx Ingress Controller manifest — it schedules the controller Pod
+#   only on nodes with this label.
 
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 
 nodes:
   # Control Plane node — runs the API server, scheduler, controller manager, etcd
+  # Also acts as the Ingress entry point via extraPortMappings
   - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            # Required by kind nginx Ingress manifest — schedules controller here
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      # Map host port 80 → container port 80 (HTTP Ingress traffic)
+      - containerPort: 80
+        hostPort: 80
+        protocol: TCP
+      # Map host port 443 → container port 443 (HTTPS Ingress traffic)
+      - containerPort: 443
+        hostPort: 443
+        protocol: TCP
+
   # Worker node — runs application workloads (pods)
   - role: worker
+
