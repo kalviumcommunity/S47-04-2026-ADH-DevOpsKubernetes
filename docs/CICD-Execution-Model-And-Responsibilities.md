@@ -1,6 +1,6 @@
 # CI/CD Execution Model — Responsibilities, Boundaries & Pipeline Flow
 
-> **Updated after AI review:** This version incorporates improvements in clarity and structure — specifically around the blast radius explanation, the pipeline change impact section, and sharper separation of CI-only vs CD-only responsibilities.
+> **Updated after AI review:** This version incorporates improvements in clarity and structure — specifically: sharpened CI/CD "should not" lists with concrete examples, added a GitOps model note to the CD execution section, expanded the blast radius explanation with a concrete mixed-pipeline failure scenario, and added trigger condition awareness to the pipeline change impact section.
 
 > This document explains how CI/CD pipelines are executed, where each action occurs, and why clearly defined responsibility boundaries are critical for safe pull requests and reliable production systems.
 
@@ -40,6 +40,7 @@ Every time a developer pushes code or opens a Pull Request, the CI pipeline runs
 - Run database migrations on production data
 - Send external notifications about deployment success/failure
 - Make decisions about *where* or *when* an artifact is used — that is CD's job
+- Contain environment-specific secrets or credentials for production systems
 
 > **Key principle:** CI's job ends when the artifact is safely stored in the registry. It has no knowledge of, and no authority over, what happens next.
 
@@ -63,6 +64,7 @@ CD only triggers after CI has successfully produced and pushed a Docker image. I
 - Build Docker images — the artifact is already built and verified
 - Contain application business logic or make decisions about code correctness
 - Bypass infrastructure review by directly modifying cluster state without manifests
+- Accept manual overrides that skip the artifact registry (e.g., `kubectl cp` or `docker run` directly on a node)
 
 > **Key principle:** CD treats the Docker image as a sealed, trusted package. It orchestrates *where* and *when* it runs — it does not modify, rebuild, or re-verify the code inside it.
 
@@ -93,7 +95,7 @@ The developer writes business logic and the tests that verify it. This layer is 
 When code is pushed, GitHub spins up a clean, ephemeral virtual machine. This runner has no persistent state. It checks out the code, installs dependencies, runs tests, builds the Docker image, and pushes it to Docker Hub. Once the job completes, the VM is destroyed. This isolation is intentional — it means no build can be contaminated by a previous one.
 
 **CD Pipeline layer** (GitHub Actions runner or GitOps controller):
-After the image is in the registry, the CD pipeline picks it up. It does not re-run tests. It updates the Kubernetes manifest (changing the `image:` field to the new tag) and applies it to the cluster. In a GitOps model (e.g., ArgoCD), the CD pipeline is replaced by a controller that watches a Git repository for manifest changes and syncs them automatically.
+After the image is in the registry, the CD pipeline picks it up. It does not re-run tests. It updates the Kubernetes manifest (changing the `image:` field to the new tag) and applies it to the cluster. In a **GitOps model** (e.g., ArgoCD), the CD pipeline is replaced by a controller that watches a Git repository for manifest changes and syncs them automatically — meaning the manifest Git repo is the single source of truth for what runs in production, and any drift is automatically corrected.
 
 **Infrastructure layer** (Kubernetes cluster):
 Kubernetes takes over completely once the manifest is applied. The scheduler assigns Pods to Nodes, the kubelet pulls the image and starts containers, health probes verify readiness, and the self-healing controllers watch for failures and respond automatically. No human and no pipeline is involved at this stage — it is fully automated infrastructure behavior.
@@ -111,6 +113,8 @@ Mixing these three layers together creates a system that is fragile, unreviewed,
 When responsibilities are separated, a failure in one layer has a contained blast radius. If tests fail in CI, the image is never built and nothing reaches production. If the CD pipeline fails, the previous deployment remains running. If a Pod crashes in Kubernetes, the ReplicaSet creates a replacement without touching the pipeline.
 
 When responsibilities are mixed — for example, a CI step that also runs `kubectl apply` directly — a test failure could still trigger a half-executed deployment. Or a deployment error could corrupt the test environment. The failure in one layer cascades into another because there are no clean boundaries to contain it.
+
+> **Concrete example:** Imagine a single CI job that runs tests AND deploys on success. If the tests pass but the deploy step fails halfway through (e.g., Kubernetes API timeout), the system is in an indeterminate state: some Pods are running the new image, some are on the old image. Neither CI nor CD "owns" the failure, there is no clean rollback path, and the pipeline may re-run and attempt a partial re-deploy. With separated CI and CD, this cannot happen — CI only pushes an image, and CD manages all deployment state.
 
 ### Review Safety in Pull Requests
 
