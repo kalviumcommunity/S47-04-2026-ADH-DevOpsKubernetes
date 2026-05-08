@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "AeroStore Helm Chart Values Schema",
+  "description": "Validates values.yaml inputs before Helm renders templates. Helm checks this automatically on install/upgrade — misconfigured values are rejected before reaching the cluster.",
+  "type": "object",
+  "required": ["image", "replicaCount", "service", "resources"],
+  "properties": {
+    "image": {
+      "type": "object",
+      "description": "Container image configuration",
+      "required": ["repository", "tag"],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "description": "Docker image repository (e.g. nginx or myregistry/myapp)",
+          "minLength": 1
+        },
+        "tag": {
+          "type": "string",
+          "description": "Docker image tag — must be a specific version, not 'latest' in production",
+          "minLength": 1
+        },
+        "pullPolicy": {
+          "type": "string",
+          "description": "Image pull policy",
+          "enum": ["Always", "Never", "IfNotPresent"]
+        }
+      }
+    },
+    "replicaCount": {
+      "type": "integer",
+      "description": "Number of Pod replicas when HPA is disabled",
+      "minimum": 1,
+      "maximum": 20
+    },
+    "service": {
+      "type": "object",
+      "description": "Kubernetes Service configuration",
+      "required": ["type", "port"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Service type",
+          "enum": ["ClusterIP", "NodePort", "LoadBalancer"]
+        },
+        "port": {
+          "type": "integer",
+          "description": "Service port",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      }
+    },
+    "autoscaling": {
+      "type": "object",
+      "description": "Horizontal Pod Autoscaler configuration",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether to create an HPA resource"
+        },
+        "minReplicas": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Minimum replica count — HPA never scales below this"
+        },
+        "maxReplicas": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum replica count — HPA never scales above this"
+        },
+        "targetCPUUtilizationPercentage": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Target average CPU utilization across all Pods (percentage of request)"
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "description": "Pod resource requests and limits",
+      "required": ["requests", "limits"],
+      "properties": {
+        "requests": {
+          "type": "object",
+          "required": ["cpu", "memory"],
+          "properties": {
+            "cpu":    { "type": "string", "pattern": "^[0-9]+(m|)$" },
+            "memory": { "type": "string", "pattern": "^[0-9]+(Mi|Gi|Ki|M|G|K)$" }
+          }
+        },
+        "limits": {
+          "type": "object",
+          "required": ["cpu", "memory"],
+          "properties": {
+            "cpu":    { "type": "string", "pattern": "^[0-9]+(m|)$" },
+            "memory": { "type": "string", "pattern": "^[0-9]+(Mi|Gi|Ki|M|G|K)$" }
+          }
+        }
+      }
+    },
+    "config": {
+      "type": "object",
+      "description": "Application configuration (injected as ConfigMap env vars)",
+      "properties": {
+        "appEnv": {
+          "type": "string",
+          "enum": ["development", "staging", "production"],
+          "description": "Environment name — controls behavior and logging"
+        },
+        "logLevel": {
+          "type": "string",
+          "enum": ["debug", "info", "warn", "error"],
+          "description": "Application log verbosity level"
+        }
+      }
+    }
+  }
+}

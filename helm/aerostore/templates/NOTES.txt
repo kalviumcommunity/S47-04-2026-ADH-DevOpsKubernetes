@@ -1,0 +1,68 @@
+{{/*
+helm/aerostore/templates/NOTES.txt
+
+NOTES.txt is printed to the terminal after every successful `helm install`
+or `helm upgrade`. It gives the user actionable next steps.
+
+This is a standard Helm chart component — critical for usability because
+it removes the need for external runbooks for basic operations.
+*/}}
+
+╔══════════════════════════════════════════════════════════════════╗
+║            AeroStore Helm Chart — Release Installed              ║
+╚══════════════════════════════════════════════════════════════════╝
+
+Release:    {{ .Release.Name }}
+Namespace:  {{ .Release.Namespace }}
+Chart:      {{ .Chart.Name }}-{{ .Chart.Version }}
+App:        {{ .Chart.AppVersion }}
+Environment: {{ .Values.config.appEnv }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. VERIFY THE DEPLOYMENT
+
+   kubectl get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+   kubectl rollout status deployment/{{ include "aerostore.fullname" . }}
+
+2. VIEW CONFIGURATION
+
+   # See rendered ConfigMap values
+   kubectl describe configmap {{ include "aerostore.fullname" . }}-config
+
+   # See all resources created by this release
+   kubectl get all -l app.kubernetes.io/instance={{ .Release.Name }}
+
+{{- if .Values.autoscaling.enabled }}
+3. AUTOSCALING (HPA enabled)
+
+   kubectl get hpa {{ include "aerostore.fullname" . }}-hpa
+   # HPA scales between {{ .Values.autoscaling.minReplicas }} and {{ .Values.autoscaling.maxReplicas }} replicas
+   # Target CPU: {{ .Values.autoscaling.targetCPUUtilizationPercentage }}%
+{{- else }}
+3. AUTOSCALING (HPA disabled for this environment)
+
+   Fixed at {{ .Values.replicaCount }} replica(s).
+   To enable: helm upgrade {{ .Release.Name }} ./helm/aerostore --set autoscaling.enabled=true
+{{- end }}
+
+4. ACCESS THE APPLICATION
+
+   kubectl port-forward svc/{{ include "aerostore.fullname" . }} 8080:{{ .Values.service.port }}
+   # Then open: http://localhost:8080
+
+5. UPGRADE THIS RELEASE
+
+   helm upgrade {{ .Release.Name }} ./helm/aerostore \
+     --values helm/aerostore/values-{{ .Values.config.appEnv }}.yaml \
+     --set image.tag=<new-version>
+
+6. VIEW RELEASE HISTORY
+
+   helm history {{ .Release.Name }}
+
+7. ROLLBACK IF NEEDED
+
+   helm rollback {{ .Release.Name }} <revision-number>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
