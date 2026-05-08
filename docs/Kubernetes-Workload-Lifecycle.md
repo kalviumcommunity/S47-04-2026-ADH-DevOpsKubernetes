@@ -1,6 +1,6 @@
 # Kubernetes Workload Lifecycle — From Deployment to Self-Healing Pods
 
-> **Updated after AI review:** This version includes improvements for clarity and correctness — specifically around the reconciliation loop explanation, rolling update availability math, and expanded CrashLoopBackOff diagnosis steps.
+> **Updated after AI review:** This version includes improvements for clarity and correctness — specifically around the reconciliation loop explanation, rolling update availability math, `progressDeadlineSeconds` rollout timeout behavior, expanded CrashLoopBackOff diagnosis steps, and the addition of the `Terminated` pod state.
 
 > This document explains the complete internal lifecycle of a Kubernetes workload — from creating a Deployment to scheduling Pods, running health checks, handling failures, and automatically recovering. It covers how Kubernetes maintains reliability through desired state management, rolling updates, probes, and self-healing behavior.
 
@@ -89,6 +89,8 @@ Repeat forever
 
 This means Kubernetes never "finishes." It is always watching, always comparing, always correcting. If you manually delete a Pod, the ReplicaSet controller detects the gap within seconds and creates a new one. If a Node goes offline, the Pods on it are rescheduled to healthy Nodes. This behavior is what makes Kubernetes self-healing — it's not magic, it's a tight feedback loop running continuously.
 
+> **Timing note:** The default reconciliation polling interval is approximately 30 seconds for node-level failures, but Pod creation and deletion events are watched in real-time via the Kubernetes API server watch mechanism — meaning most recovery actions happen within 1–5 seconds of a Pod failure being detected.
+
 ---
 
 ## 2. Deployment & Rollout Mechanics
@@ -149,6 +151,8 @@ kubectl rollout status deployment/aerostore-backend
 # Output: Waiting for deployment "aerostore-backend" rollout to finish: 1 out of 4 new replicas have been updated...
 # (stays here — rollout stalled)
 ```
+
+> **`progressDeadlineSeconds`:** By default, Kubernetes waits up to **600 seconds** (10 minutes) for a rollout to make progress before marking it as `Failed` and adding a `ProgressDeadlineExceeded` condition to the Deployment. You can tune this with `spec.progressDeadlineSeconds`. A failed rollout does NOT automatically roll back — you must run `kubectl rollout undo` manually, or configure your CD pipeline to do so.
 
 You can then roll back:
 ```bash
@@ -289,6 +293,19 @@ kubectl describe pod <pod-name>
 | **What it means** | The container exceeded its memory limit and was killed by the Linux OOM (Out Of Memory) killer |
 | **Common causes** | Memory limit set too low, application memory leak, unexpected traffic spike causing high memory usage |
 | **Kubernetes response** | The container is killed and restarted. If it keeps hitting the memory limit, it enters `CrashLoopBackOff`. The exit code is `137` |
+
+```bash
+kubectl describe pod <pod-name>
+# Look for: "OOMKilled" in the Last State section and exit code 137
+```
+
+### Terminated
+
+| | |
+|---|---|
+| **What it means** | The container has finished running and exited. This is the expected final state for batch jobs or init containers that run to completion |
+| **Common causes** | Normal process exit (exit code 0 = success), crash (non-zero exit code), or explicit deletion via `kubectl delete pod` |
+| **Kubernetes response** | For Deployments: if exit code is non-zero, the container is restarted (eventually leading to `CrashLoopBackOff`). For Jobs: a successful exit (0) marks the Job as complete |
 
 ```bash
 kubectl describe pod <pod-name>
