@@ -512,6 +512,45 @@ Running a Pod without persistent storage is running stateless compute. That's ap
 
 > For the full PVC lifecycle analysis, access mode guide, StorageClass explanation, and the file upload scenario walkthrough, see [Kubernetes Persistent Storage](docs/Kubernetes-Persistent-Storage.md).
 
+### Phase 17: Ingress — External Traffic Routing ✅ *(NEW)*
+We defined the AeroStore Ingress resource that routes all external HTTPS traffic through a single entry point into the correct internal Service, replacing per-service NodePort exposure with path-based routing through an Ingress Controller.
+
+**What this phase covers:**
+- Why **ClusterIP Services are internal-only** and how external traffic must enter through an Ingress Controller or NodePort/LoadBalancer.
+- Why **NodePort does not scale** for production: non-standard ports, no TLS, no path routing, no centralized rate limiting, firewall complexity.
+- The **complete traffic path**: Client → DNS → Cloud LB → Ingress Controller Pod → Ingress rules match host+path → ClusterIP Service → kube-proxy → Pod.
+- The distinction between an **Ingress resource** (routing rules YAML) and an **Ingress Controller** (the running proxy Pod that enforces them) — both are required.
+- **Path-based routing**: `/api/*` routes to `aerostore-backend-service:3001`, `/*` routes to `aerostore-frontend-service:80` — from one hostname, one IP, one port 443.
+- **TLS termination** at the Ingress Controller: decrypts HTTPS once for all services, forwards plain HTTP internally.
+- nginx annotations for URL **rewriting** (strip `/api` prefix), **SSL redirect**, and **rate limiting**.
+
+**Key principle:** *Ingress is the single front door to the cluster. All external traffic enters on port 443, is decrypted once, and is routed to the correct Service by path or host. Adding a new service is three lines of YAML — no new load balancer, no new port, no new firewall rule.*
+
+- *Docs:* [Kubernetes Ingress & Traffic Routing](docs/Kubernetes-Ingress-And-Traffic-Routing.md).
+- *Manifest:* [`k8s/basics/aerostore-ingress.yaml`](k8s/basics/aerostore-ingress.yaml).
+
+#### 📊 Ingress Traffic Flow Diagram
+
+![Kubernetes Ingress Traffic Routing Diagram](docs/k8s-ingress-diagram.png)
+
+```
+Client → HTTPS :443 → DNS → Cloud LB → Ingress Controller
+                                                  │
+                                    reads Ingress routing rules
+                                                  │
+                  /api/* → aerostore-backend-service:3001 → [Pod] [Pod]
+                  /*     → aerostore-frontend-service:80  → [Pod]
+
+NodePort: 5 services = 5 ports (31001–31005) = 5 firewall rules
+Ingress:  5 services = port 443 + 5 path rules = 1 firewall rule
+```
+
+#### 💡 Reflection: Ingress as the Cluster's Front Door
+
+Ingress consolidates all external routing decisions into a single, auditable, version-controlled resource. Every routing rule is visible in one YAML file. TLS is handled once. Rate limits are applied at the edge, before requests reach application code. This is the architectural pattern that allows a cluster running dozens of services to present a single clean hostname to users, with routing that can be changed by merging a pull request.
+
+> For the full traffic path analysis, Controller vs Resource distinction, path/host routing options, TLS setup, and the NodePort scenario, see [Kubernetes Ingress & Traffic Routing](docs/Kubernetes-Ingress-And-Traffic-Routing.md).
+
 ---
 
 ## 💻 Developer Guide: Running the K8s Environment
@@ -586,9 +625,10 @@ kubectl port-forward service/aerostore-frontend-service 8080:80
 ├── k8s/              # Raw Kubernetes declarative YAML manifests
 │   ├── kind-cluster-config.yaml
 │   └── basics/
-│       ├── backend-pvc.yaml             ← NEW: PVC for persistent uploads storage
-│       ├── stateful-demo-pod.yaml       ← NEW: Demo pod proving data persistence
-│       ├── persistence-demo.md          ← NEW: Persistence demo commands
+│       ├── aerostore-ingress.yaml       ← NEW: Ingress with path-based routing
+│       ├── backend-pvc.yaml
+│       ├── stateful-demo-pod.yaml
+│       ├── persistence-demo.md
 │       ├── rollout-demo.md
 │       ├── backend-hpa.yaml
 │       ├── scaling-demo.md
@@ -597,7 +637,7 @@ kubectl port-forward service/aerostore-frontend-service 8080:80
 │       ├── probe-demo-pod.yaml
 │       ├── app-configmap.yaml
 │       ├── app-secret.yaml
-│       ├── backend-deployment.yaml      (updated: rolling update strategy)
+│       ├── backend-deployment.yaml
 │       ├── backend-service.yaml
 │       ├── curl-client-pod.yaml
 │       ├── nginx-deployment.yaml
@@ -606,8 +646,10 @@ kubectl port-forward service/aerostore-frontend-service 8080:80
 │       └── nginx-replicaset.yaml
 ├── scripts/          # Automation scripts (e.g., manage-k8s-cluster.sh)
 ├── docs/             # Extensive documentation on DevOps concepts
-│   ├── Kubernetes-Persistent-Storage.md              ← NEW: PVC & persistence docs
-│   ├── k8s-persistent-storage-diagram.png            ← NEW: Storage diagram
+│   ├── Kubernetes-Ingress-And-Traffic-Routing.md      ← NEW: Ingress docs
+│   ├── k8s-ingress-diagram.png                        ← NEW: Traffic flow diagram
+│   ├── Kubernetes-Persistent-Storage.md
+│   ├── k8s-persistent-storage-diagram.png
 │   ├── Helm-Environment-Configuration.md
 │   ├── Kubernetes-Helm-Package-Management.md
 │   ├── k8s-helm-diagram.png

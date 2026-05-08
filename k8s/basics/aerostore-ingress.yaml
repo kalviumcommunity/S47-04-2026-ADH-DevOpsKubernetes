@@ -1,0 +1,121 @@
+# k8s/basics/aerostore-ingress.yaml
+#
+# Ingress resource for the AeroStore application
+#
+# PURPOSE:
+#   This Ingress defines the routing rules that determine how external HTTP/S
+#   traffic is directed to the correct Kubernetes Service based on the URL
+#   path. It is the single entry point for all external user traffic.
+#
+# PREREQUISITES — INGRESS CONTROLLER:
+#   An Ingress resource alone does nothing. It requires an Ingress Controller
+#   — a Pod running inside the cluster that watches all Ingress resources and
+#   enforces their rules.
+#
+#   For kind (local development):
+#     kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+#
+#   For production clusters:
+#     GKE: GKE Ingress Controller (built-in)
+#     EKS: AWS Load Balancer Controller
+#     General: nginx-ingress or Traefik (installed via Helm)
+#
+# HOW INGRESS WORKS (full traffic path):
+#   1. DNS resolves aerostore.example.com → External IP of LoadBalancer Service
+#   2. Traffic hits the cloud Load Balancer (or NodePort in dev)
+#   3. Load Balancer forwards to the Ingress Controller Pod
+#   4. Ingress Controller reads this Ingress resource's rules
+#   5. Matches the request path against the rules (longest prefix wins)
+#   6. Forwards to the correct ClusterIP Service
+#   7. Service load-balances across matching Pods using kube-proxy
+#   8. Pod processes the request and responds
+#
+# ROUTING DECISIONS IN THIS INGRESS:
+#   /api/*   → aerostore-backend-service  (Node.js/Express backend)
+#   /*       → aerostore-frontend-service (React SPA)
+#
+#   The more specific path (/api/*) must be listed FIRST because the
+#   Ingress controller matches rules in order for Prefix type.
+#
+# TLS:
+#   The tls section references a Secret containing the TLS certificate.
+#   The Ingress Controller handles TLS termination — decrypts HTTPS here
+#   and forwards plain HTTP to the Services internally.
+#   In kind/dev, TLS is omitted and HTTP is used instead.
+#
+# VERIFICATION:
+#   kubectl get ingress aerostore-ingress
+#   kubectl describe ingress aerostore-ingress
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: aerostore-ingress
+  labels:
+    app: aerostore
+  annotations:
+    # Ingress class: tells Kubernetes which Ingress Controller handles this resource
+    kubernetes.io/ingress.class: "nginx"
+
+    # nginx-specific: rewrite the URL before forwarding to the Service.
+    # Without this, /api/products would be forwarded as /api/products.
+    # With $1 capture from the path regex, it becomes /products.
+    # This allows the backend to use clean paths without /api prefix.
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+
+    # Enable HTTPS redirect: any HTTP request is redirected to HTTPS
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+
+    # Rate limiting: prevent abuse by limiting requests per IP
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+
+spec:
+  # ─────────────────────────────────────────────────────────────────────────
+  # TLS CONFIGURATION
+  # References a Kubernetes Secret containing the TLS certificate and key.
+  # The Ingress Controller terminates TLS here — internal Services use HTTP.
+  # In production, use cert-manager to auto-provision and rotate certificates.
+  #
+  # To generate a self-signed cert for local testing:
+  #   openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  #     -keyout tls.key -out tls.crt -subj "/CN=aerostore.example.com"
+  #   kubectl create secret tls aerostore-tls --key tls.key --cert tls.crt
+  # ─────────────────────────────────────────────────────────────────────────
+  tls:
+    - hosts:
+        - aerostore.example.com
+      secretName: aerostore-tls   # Secret must exist before applying
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # ROUTING RULES
+  # Each rule matches a host. Within a host, paths match specific Services.
+  # ─────────────────────────────────────────────────────────────────────────
+  rules:
+    - host: aerostore.example.com   # Production hostname
+      http:
+        paths:
+          # ── BACKEND API ROUTE ──────────────────────────────────────────
+          # Matches: /api/ and everything under it
+          # Forwards to: aerostore-backend-service on port 3001
+          # The nginx rewrite-target annotation strips /api from the path
+          # so the backend receives /products instead of /api/products
+          - path: /api(/|$)(.*)
+            pathType: Prefix
+            backend:
+              service:
+                name: aerostore-backend-service
+                port:
+                  number: 3001
+
+          # ── FRONTEND ROUTE ─────────────────────────────────────────────
+          # Matches: everything else (root and all paths)
+          # Forwards to: aerostore-frontend-service on port 80
+          # The React SPA handles its own client-side routing (/about, etc.)
+          # This rule is listed LAST — it is the catch-all default
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: aerostore-frontend-service
+                port:
+                  number: 80
