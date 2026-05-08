@@ -446,6 +446,29 @@ helm install aerostore-prod ... --values values-prod.yaml    → 5 replicas, HPA
 Same 5 template files. Three distinct cluster states.
 ```
 
+### Phase 15: Environment-Specific Helm Values — One Chart, Three Environments ✅ *(NEW)*
+We documented and formalized the environment-specific Helm values strategy for the AeroStore chart, adding a complete environment comparison runbook, `.helmignore` for proper chart packaging, and dedicated documentation covering the configuration merge model, externalization rules, and the cost of chart duplication.
+
+**What this phase adds:**
+- **`environments.md`** — authoritative runbook with a full configuration comparison table across dev/staging/prod, the rationale behind every difference, and exact deploy commands per environment.
+- **`.helmignore`** — standard Helm chart file preventing documentation and editor artifacts from being bundled into the chart package when distributed via a chart repository.
+- **`docs/Helm-Environment-Configuration.md`** — deep explanation of the configuration drift problem, the Helm merge model with annotated examples, what to externalize into values, and the N×M complexity argument against duplicating charts.
+
+**Key principle for this assignment:** *The same chart, the same templates, the same schema — only the values file changes per environment. `values-dev.yaml` is 8 lines (only what differs). `values-prod.yaml` is 14 lines (only what differs). Every configuration difference is explicit, version-controlled, and reviewable in one small file.*
+
+**Environment configuration comparison:**
+
+| | Development | Staging | Production |
+|---|---|---|---|
+| Replicas | 1 | 2 | 5 |
+| HPA | disabled | enabled (max 5) | enabled (max 12) |
+| CPU request | 50m | 100m | 200m |
+| Log level | debug | info | warn |
+| Image tag | 1.16.1 (stable) | 1.17.0 (RC) | 1.17.0 (pinned) |
+
+- *Docs:* [Helm Environment Configuration](docs/Helm-Environment-Configuration.md).
+- *Runbook:* [`helm/aerostore/environments.md`](helm/aerostore/environments.md).
+
 ---
 
 ## 💻 Developer Guide: Running the K8s Environment
@@ -501,15 +524,17 @@ kubectl port-forward service/aerostore-frontend-service 8080:80
 ├── frontend/         # React SPA source code
 ├── helm/             # Helm chart for the AeroStore application
 │   └── aerostore/                           (v0.2.0)
-│       ├── Chart.yaml                       (chart metadata, version 0.2.0)
+│       ├── .helmignore                      ← NEW: chart packaging exclusions
+│       ├── Chart.yaml                       (chart metadata)
 │       ├── values.yaml                      (default values)
-│       ├── values-dev.yaml                  (dev overrides: 1 replica, no HPA)
-│       ├── values-staging.yaml              ← NEW: staging overrides (2 replicas)
-│       ├── values-prod.yaml                 (prod overrides: 5 replicas)
-│       ├── values.schema.json               ← NEW: values validation schema
+│       ├── values-dev.yaml                  (dev: 1 replica, no HPA, debug logs)
+│       ├── values-staging.yaml              (staging: 2 replicas, HPA, info logs)
+│       ├── values-prod.yaml                 (prod: 5 replicas, HPA max 12, warn)
+│       ├── values.schema.json               (values validation schema)
+│       ├── environments.md                  ← NEW: environment comparison runbook
 │       ├── helm-demo.md                     (demo commands)
 │       └── templates/
-│           ├── NOTES.txt                    ← NEW: post-install guide (env-aware)
+│           ├── NOTES.txt                    (post-install guide)
 │           ├── _helpers.tpl                 (named templates)
 │           ├── deployment.yaml
 │           ├── service.yaml
@@ -535,8 +560,9 @@ kubectl port-forward service/aerostore-frontend-service 8080:80
 │       └── nginx-replicaset.yaml
 ├── scripts/          # Automation scripts (e.g., manage-k8s-cluster.sh)
 ├── docs/             # Extensive documentation on DevOps concepts
-│   ├── Kubernetes-Helm-Package-Management.md          ← NEW: Helm docs
-│   ├── k8s-helm-diagram.png                           ← NEW: Helm diagram
+│   ├── Helm-Environment-Configuration.md             ← NEW: env-specific values docs
+│   ├── Kubernetes-Helm-Package-Management.md
+│   ├── k8s-helm-diagram.png
 │   ├── Kubernetes-Rolling-Updates-And-Rollbacks.md
 │   ├── k8s-rolling-update-diagram.png
 │   ├── Kubernetes-Scaling-And-HPA.md

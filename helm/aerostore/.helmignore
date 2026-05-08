@@ -1,0 +1,22 @@
+# .helmignore
+#
+# Patterns to ignore when packaging the chart with `helm package`.
+# Works like .gitignore — prevents these files from being included
+# in the .tgz artifact when the chart is distributed via a chart repository.
+
+# Documentation files (not needed at runtime)
+*.md
+environments.md
+helm-demo.md
+
+# Editor and OS artifacts
+.DS_Store
+.vscode/
+*.swp
+*.bak
+
+# Test fixtures
+tests/
+
+# CI/CD local configs
+*.local.yaml
