@@ -573,7 +573,49 @@ http://localhost/api/products → GET /products (after /api rewrite)
 - *Manifest:* [`k8s/basics/nginx-ingress-local.yaml`](k8s/basics/nginx-ingress-local.yaml).
 - *Setup script:* [`scripts/setup-ingress-controller.sh`](scripts/setup-ingress-controller.sh).
 
+### Phase 19: RBAC — Role-Based Access Control ✅ *(NEW)*
+We implemented Kubernetes RBAC for the AeroStore cluster, defining two namespace-scoped Roles and binding them to dedicated ServiceAccounts — a read-only `dev-viewer` for developers and a deploy-only `cicd-deployer` for CI/CD pipelines, all within the `dev-team` namespace.
+
+**What this phase covers:**
+- The **default-deny** model: all Kubernetes API requests are denied unless explicitly permitted by a Role + RoleBinding.
+- **`Role` (not ClusterRole)** for namespace isolation — a Role in `dev-team` has zero effect in `production` or `staging`, even with the same ServiceAccount credentials.
+- **`dev-viewer` Role** — `get/list/watch` on pods, pod logs, services, deployments, configmaps, and events. Explicitly excludes: secrets, exec, all write verbs.
+- **`cicd-deployer` Role** — `get/list/watch` on deployments + `update/patch` on deployments only. Cannot delete, create, or access Secrets.
+- **`RoleBindings`** — the binding itself is namespace-scoped and immutable in its `roleRef`.
+- **`kubectl auth can-i`** verification: proves allowed and denied actions without executing real requests.
+
+**Allowed vs Denied:**
+
+| Action | Developer SA | CI/CD SA |
+|---|---|---|
+| `kubectl get pods` | ✅ | ✅ |
+| `kubectl logs pod` | ✅ | ❌ |
+| `kubectl delete pod` | ❌ | ❌ |
+| `kubectl get secrets` | ❌ | ❌ |
+| Update Deployment image | ❌ | ✅ |
+| Access `production` namespace | ❌ | ❌ |
+
+- *Docs:* [Kubernetes RBAC](docs/Kubernetes-RBAC.md).
+- *Manifests:* [`k8s/rbac/`](k8s/rbac/).
+
+#### 📊 RBAC Diagram
+
+![Kubernetes RBAC Diagram](docs/k8s-rbac-diagram.png)
+
+```
+aerostore-dev-sa  → RoleBinding: dev-viewer-binding  → Role: dev-viewer
+                    verbs: get, list, watch | NO delete, exec, secrets
+aerostore-cicd-sa → RoleBinding: cicd-deployer-binding → Role: cicd-deployer
+                    verbs: get, list, update, patch | NO delete, secrets
+Other team SA     → No binding in dev-team → 403 Forbidden on all requests
+
+Both Roles: namespace=dev-team ONLY → 403 in production/staging
+```
+
+> For the API server evaluation model, field-by-field Role explanation, and the multi-team scenario, see [Kubernetes RBAC](docs/Kubernetes-RBAC.md).
+
 ---
+
 
 ## 💻 Developer Guide: Running the K8s Environment
 
@@ -645,9 +687,16 @@ kubectl port-forward service/aerostore-frontend-service 8080:80
 │           ├── hpa.yaml                     (conditional on autoscaling.enabled)
 │           └── configmap.yaml
 ├── k8s/
-│   ├── kind-cluster-config.yaml            (updated: extraPortMappings for Ingress)
+│   ├── kind-cluster-config.yaml
+│   ├── rbac/                            ← NEW: RBAC manifests
+│   │   ├── dev-team-namespace.yaml      (dedicated namespace for RBAC scope)
+│   │   ├── serviceaccounts.yaml         (dev-sa and cicd-sa)
+│   │   ├── dev-viewer-role.yaml         (read-only: get/list/watch)
+│   │   ├── cicd-deployer-role.yaml      (deploy-only: update/patch deployments)
+│   │   ├── role-bindings.yaml           (dev-sa→dev-viewer, cicd-sa→cicd-deployer)
+│   │   └── rbac-demo.md                 (kubectl auth can-i verification commands)
 │   └── basics/
-│       ├── nginx-ingress-local.yaml     ← NEW: localhost HTTP Ingress (kind dev)
+│       ├── nginx-ingress-local.yaml
 │       ├── aerostore-ingress.yaml       (production HTTPS Ingress with TLS)
 │       ├── backend-pvc.yaml
 │       ├── stateful-demo-pod.yaml
@@ -671,7 +720,9 @@ kubectl port-forward service/aerostore-frontend-service 8080:80
 │   ├── setup-ingress-controller.sh  ← NEW: install nginx controller + apply Ingress
 │   └── manage-k8s-cluster.sh
 ├── docs/             # Extensive documentation on DevOps concepts
-│   ├── Kubernetes-Nginx-Ingress-Controller.md         ← NEW: nginx controller docs
+│   ├── Kubernetes-RBAC.md                            ← NEW: RBAC docs
+│   ├── k8s-rbac-diagram.png                          ← NEW: RBAC diagram
+│   ├── Kubernetes-Nginx-Ingress-Controller.md
 │   ├── Kubernetes-Ingress-And-Traffic-Routing.md
 │   ├── k8s-ingress-diagram.png
 │   ├── Kubernetes-Persistent-Storage.md

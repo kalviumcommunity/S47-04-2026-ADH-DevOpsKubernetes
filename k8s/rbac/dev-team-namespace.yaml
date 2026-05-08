@@ -1,0 +1,14 @@
+# k8s/rbac/dev-team-namespace.yaml
+#
+# Dedicated namespace for the AeroStore developer team.
+# RBAC Roles are always namespace-scoped — they only apply within the
+# namespace they are created in. Using a dedicated namespace per team
+# enforces hard isolation between teams at the Kubernetes API level.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dev-team
+  labels:
+    team: aerostore-developers
+    environment: development
