@@ -1,0 +1,45 @@
+# k8s/basics/curl-client-pod.yaml
+#
+# Debug Pod for demonstrating DNS-based service discovery.
+#
+# PURPOSE:
+#   This Pod runs a lightweight curl-capable container that can be used to
+#   verify that DNS-based service discovery works correctly inside the cluster.
+#
+#   From inside this Pod, you can run:
+#     curl http://aerostore-backend-service:3001
+#     curl http://aerostore-frontend-service:80
+#
+#   Kubernetes CoreDNS resolves the Service name to its stable ClusterIP,
+#   which then routes the request to one of the healthy backend Pods.
+#   No IP address is needed — the Service name is the stable endpoint.
+#
+# FULL DNS VERIFICATION:
+#   You can also verify DNS resolution explicitly:
+#     nslookup aerostore-backend-service
+#     nslookup aerostore-backend-service.default.svc.cluster.local
+#
+# HOW TO USE:
+#   kubectl apply -f k8s/basics/curl-client-pod.yaml
+#   kubectl exec -it curl-client -- sh
+#   # Inside the pod:
+#   curl http://aerostore-backend-service:3001
+#   nslookup aerostore-backend-service
+#
+# NOTE: This is a diagnostic/demo pod only — not a production workload.
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: curl-client
+  labels:
+    app: curl-client
+    purpose: service-discovery-demo
+spec:
+  containers:
+    - name: curl-client
+      image: curlimages/curl:latest
+      # Keep the pod running so we can exec into it
+      command: ["sleep", "3600"]
+  # Restart policy: Never means it won't restart automatically after completion
+  restartPolicy: Never
