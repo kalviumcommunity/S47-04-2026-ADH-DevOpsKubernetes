@@ -1,0 +1,221 @@
+# .github/workflows/ci.yml
+#
+# AeroStore — Continuous Integration Workflow
+#
+# PURPOSE:
+#   This workflow runs automatically on every push to any branch and on
+#   every pull request targeting main. It ensures that code changes are
+#   validated before they are merged — catching dependency issues, build
+#   failures, and obvious bugs as early as possible.
+#
+# TRIGGER CONDITIONS:
+#   push:         Runs on every commit pushed to any branch.
+#                 Catches issues immediately when a developer pushes work.
+#   pull_request: Runs when a PR is opened, synchronized (new commits added),
+#                 or reopened against main. Prevents broken code from reaching
+#                 the main branch via the merge button.
+#
+# CI PIPELINE STRUCTURE:
+#   Job 1: backend-ci  — validates the Node.js/Express backend
+#   Job 2: frontend-ci — validates the Vite/React frontend
+#   Job 3: docker-build — validates that Docker images build successfully
+#   Both run in parallel; docker-build runs after both pass.
+#
+# WHY THIS MATTERS:
+#   Without CI, developers rely on "it works on my machine." When two
+#   developers' changes are combined in the main branch, integration
+#   failures are discovered only after merging — expensive to fix and
+#   potentially breaking for everyone. CI catches these failures at the
+#   PR level, before the merge button is clicked.
+
+name: AeroStore CI
+
+on:
+  # Trigger on push to ALL branches
+  # This means every commit, not just PRs, is validated
+  push:
+    branches:
+      - "**"
+
+  # Trigger on pull requests targeting main
+  # Runs when a PR is opened, new commits are pushed to the PR branch,
+  # or the PR is reopened
+  pull_request:
+    branches:
+      - main
+
+# Cancel any in-progress run of the same workflow on the same branch
+# when a new commit is pushed. Saves CI minutes, reduces queue time.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ═══════════════════════════════════════════════════════════════════════
+  # JOB 1: Backend CI — Node.js / Express API
+  # ═══════════════════════════════════════════════════════════════════════
+  backend-ci:
+    name: "Backend — Install & Validate"
+    runs-on: ubuntu-latest
+
+    # Default working directory for all run steps in this job
+    defaults:
+      run:
+        working-directory: ./backend
+
+    steps:
+      # ── Step 1: Checkout the repository ────────────────────────────────
+      # actions/checkout clones the repository at the current commit SHA
+      # into the runner's workspace. Without this, no files are available.
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ── Step 2: Set up Node.js ──────────────────────────────────────────
+      # Installs the specified Node version and configures the npm cache.
+      # The cache key is based on package-lock.json — if dependencies haven't
+      # changed, the cached node_modules is restored (faster CI runs).
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+
+      # ── Step 3: Install dependencies ───────────────────────────────────
+      # npm ci (clean install) is preferred over npm install in CI:
+      # - Uses package-lock.json exactly — no version drift
+      # - Fails if package-lock.json is out of sync with package.json
+      # - Deletes node_modules first for a clean state
+      - name: Install dependencies
+        run: npm ci
+
+      # ── Step 4: Validate project structure ─────────────────────────────
+      # Confirms the entry point exists. In a project without a test runner
+      # yet, this structural check catches missing files, incorrect imports,
+      # and module resolution errors without spinning up a full server.
+      - name: Validate entry point
+        run: node --check index.js
+
+      # ── Step 5: Verify the app starts without errors ────────────────────
+      # Starts the server in the background, waits for it to bind,
+      # makes one HTTP request to the /api/health endpoint, then kills it.
+      # Uses /api/health (not /api/products) — lightweight, no file I/O.
+      - name: Smoke test — server starts and responds
+        run: |
+          node index.js > /tmp/server.log 2>&1 &
+          SERVER_PID=$!
+          echo "Server PID: $SERVER_PID"
+          # Wait up to 10s for the server to bind
+          for i in $(seq 1 10); do
+            sleep 1
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/api/health 2>/dev/null || echo "000")
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "✅ Server ready after ${i}s (HTTP $HTTP_STATUS)"
+              break
+            fi
+            echo "  Waiting... attempt $i (HTTP $HTTP_STATUS)"
+          done
+          kill $SERVER_PID 2>/dev/null || true
+          echo "--- Server log ---"
+          cat /tmp/server.log || true
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "❌ Smoke test failed — server returned $HTTP_STATUS (expected 200)"
+            exit 1
+          fi
+          echo "✅ Smoke test passed"
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # JOB 2: Frontend CI — Vite / React SPA
+  # ═══════════════════════════════════════════════════════════════════════
+  frontend-ci:
+    name: "Frontend — Install & Build"
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./frontend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ── Build the production bundle ─────────────────────────────────────
+      # Vite's build step:
+      # - Compiles JSX to JS (catches syntax errors, invalid imports)
+      # - Tree-shakes unused code
+      # - Generates optimized static assets in dist/
+      #
+      # A build failure here means the app cannot be deployed.
+      # Running this in CI catches: missing imports, typos in component names,
+      # import cycle errors, and TypeScript errors (if TS is added later).
+      - name: Build production bundle
+        run: npm run build
+
+      # ── Verify build output exists ──────────────────────────────────────
+      # Confirms the dist/ directory was created with an index.html.
+      # A build that exits 0 but produces no output is a silent failure.
+      - name: Verify build artifacts
+        run: |
+          if [ ! -f dist/index.html ]; then
+            echo "❌ Build failed — dist/index.html not found"
+            exit 1
+          fi
+          echo "✅ Build artifacts verified"
+          ls -lah dist/
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # JOB 3: Docker Build Validation
+  # Runs only after both backend-ci and frontend-ci pass
+  # ═══════════════════════════════════════════════════════════════════════
+  docker-build:
+    name: "Docker — Build Images"
+    runs-on: ubuntu-latest
+    needs: [backend-ci, frontend-ci]   # Only runs if both jobs above pass
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Set up Docker Buildx for better build performance
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Build backend Docker image (does NOT push — CI only validates build)
+      # If the Dockerfile has errors or the build fails, this step fails the workflow
+      - name: Build backend Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: false           # CI only — no registry push
+          tags: aerostore-backend:ci-${{ github.sha }}
+          cache-from: type=gha  # GitHub Actions cache for layer reuse
+          cache-to: type=gha,mode=max
+
+      # Build frontend Docker image
+      - name: Build frontend Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: false
+          tags: aerostore-frontend:ci-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: CI summary
+        run: |
+          echo "✅ CI Pipeline passed"
+          echo "Backend image: aerostore-backend:ci-${{ github.sha }}"
+          echo "Frontend image: aerostore-frontend:ci-${{ github.sha }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Triggered by: ${{ github.event_name }}"

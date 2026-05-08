@@ -614,6 +614,36 @@ Both Roles: namespace=dev-team ONLY → 403 in production/staging
 
 > For the API server evaluation model, field-by-field Role explanation, and the multi-team scenario, see [Kubernetes RBAC](docs/Kubernetes-RBAC.md).
 
+### Phase 20: GitHub Actions CI — Continuous Integration ✅ *(NEW)*
+We implemented a GitHub Actions CI workflow that runs automatically on every push and pull request, validating the backend and frontend in parallel before allowing Docker image builds.
+
+**Workflow: `.github/workflows/ci.yml`**
+
+| Job | Trigger | What it validates |
+|---|---|---|
+| `backend-ci` | push / PR | `npm ci` lockfile integrity, `node --check` syntax, smoke test (server starts + HTTP 200) |
+| `frontend-ci` | push / PR | `npm ci`, `vite build` production bundle, `dist/index.html` artifact present |
+| `docker-build` | after both pass | Backend + frontend Dockerfiles build successfully (no push in CI) |
+
+**Trigger conditions:**
+```yaml
+on:
+  push:
+    branches: ["**"]        # Every branch — fail fast before PR is opened
+  pull_request:
+    branches: [main]        # Gate: must pass before merge button is clickable
+```
+
+**Key CI features:**
+- `npm ci` (not `npm install`) — fails if lockfile is inconsistent, guarantees reproducible installs
+- Parallel jobs — total CI time is `max(backend, frontend)`, not their sum
+- `needs: [backend-ci, frontend-ci]` on docker-build — Docker only runs if code is valid
+- `concurrency: cancel-in-progress` — stale runs cancelled when new commits are pushed
+- GitHub Actions cache for npm modules and Docker layers — fast subsequent runs
+
+- *Docs:* [GitHub Actions CI](docs/GitHub-Actions-CI.md).
+- *Workflow:* [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+
 ---
 
 
@@ -720,8 +750,9 @@ kubectl port-forward service/aerostore-frontend-service 8080:80
 │   ├── setup-ingress-controller.sh  ← NEW: install nginx controller + apply Ingress
 │   └── manage-k8s-cluster.sh
 ├── docs/             # Extensive documentation on DevOps concepts
-│   ├── Kubernetes-RBAC.md                            ← NEW: RBAC docs
-│   ├── k8s-rbac-diagram.png                          ← NEW: RBAC diagram
+│   ├── GitHub-Actions-CI.md                          ← NEW: CI workflow docs
+│   ├── Kubernetes-RBAC.md
+│   ├── k8s-rbac-diagram.png
 │   ├── Kubernetes-Nginx-Ingress-Controller.md
 │   ├── Kubernetes-Ingress-And-Traffic-Routing.md
 │   ├── k8s-ingress-diagram.png
