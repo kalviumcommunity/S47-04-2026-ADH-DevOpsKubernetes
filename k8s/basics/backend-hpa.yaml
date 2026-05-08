@@ -1,0 +1,98 @@
+# k8s/basics/backend-hpa.yaml
+#
+# Horizontal Pod Autoscaler (HPA) for the AeroStore backend Deployment
+#
+# PURPOSE:
+#   Automatically scales the number of backend Pods up or down based on
+#   observed CPU utilization, without any human intervention.
+#
+# HOW HPA WORKS:
+#   1. The Metrics Server collects CPU usage from each Pod every 15 seconds.
+#   2. The HPA controller reads these metrics every 15 seconds (default).
+#   3. It calculates the desired replica count using this formula:
+#
+#      desiredReplicas = ceil(currentReplicas × (currentMetric / targetMetric))
+#
+#      Example:
+#        currentReplicas = 2
+#        currentCPU      = 80%  (average across all Pods)
+#        targetCPU       = 50%
+#        desiredReplicas = ceil(2 × (80 / 50)) = ceil(3.2) = 4
+#
+#   4. HPA adjusts the Deployment's replica count to reach the desired number.
+#
+# PREREQUISITES:
+#   HPA requires the Metrics Server to be running in the cluster:
+#     kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+#
+#   For kind clusters, add --kubelet-insecure-tls flag to metrics-server args.
+#
+# SCALING BEHAVIOR:
+#   Scale-up:   Fast — triggered as soon as CPU > target for 3 consecutive checks
+#   Scale-down: Slow — waits 5 minutes (stabilization window) before reducing
+#               replicas, to avoid thrashing during brief traffic drops.
+#
+# VERIFICATION:
+#   kubectl get hpa aerostore-backend-hpa
+#   kubectl describe hpa aerostore-backend-hpa
+#   kubectl get hpa aerostore-backend-hpa -w   # watch real-time scaling decisions
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: aerostore-backend-hpa
+  labels:
+    app: backend
+spec:
+  # Which Deployment to scale
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: aerostore-backend
+
+  # ─────────────────────────────────────────────────────────────────────
+  # REPLICA BOUNDS — protect both the application and the cluster
+  #
+  # minReplicas: The floor. HPA will never scale below this, even if CPU
+  #   drops to zero. Ensures there are always Pods available for traffic.
+  #   Set to 2 for availability — 1 replica means zero-redundancy.
+  #
+  # maxReplicas: The ceiling. HPA will never scale beyond this, even if
+  #   CPU spikes to 100%. Prevents runaway autoscaling from exhausting
+  #   cluster resources or exceeding the ResourceQuota budget.
+  # ─────────────────────────────────────────────────────────────────────
+  minReplicas: 2
+  maxReplicas: 8
+
+  metrics:
+    # PRIMARY METRIC: Average CPU utilization across all backend Pods
+    # When average CPU exceeds 50%, HPA scales up.
+    # When average CPU drops well below 50%, HPA eventually scales down.
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          # Target: keep average CPU at 50% of each Pod's CPU request.
+          # At 50% target, there's always headroom for traffic spikes
+          # before the next scale-up cycle completes (~30-60 seconds).
+          averageUtilization: 50
+
+  # ─────────────────────────────────────────────────────────────────────
+  # SCALING BEHAVIOR — fine-tune when and how fast scaling occurs
+  # ─────────────────────────────────────────────────────────────────────
+  behavior:
+    scaleUp:
+      # Scale up quickly to handle traffic spikes
+      stabilizationWindowSeconds: 30   # Wait 30s before scale-up decision
+      policies:
+        - type: Pods
+          value: 2                     # Add at most 2 Pods per scale event
+          periodSeconds: 30            # One scale event every 30 seconds
+    scaleDown:
+      # Scale down slowly to avoid thrashing during brief traffic drops
+      stabilizationWindowSeconds: 300  # Wait 5 minutes before scale-down
+      policies:
+        - type: Pods
+          value: 1                     # Remove at most 1 Pod per scale event
+          periodSeconds: 60            # One scale event every 60 seconds
