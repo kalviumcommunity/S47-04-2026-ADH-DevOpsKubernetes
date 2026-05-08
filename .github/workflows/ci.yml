@@ -98,22 +98,31 @@ jobs:
 
       # ── Step 5: Verify the app starts without errors ────────────────────
       # Starts the server in the background, waits for it to bind,
-      # makes one HTTP request to confirm it responds, then kills it.
-      # This is a smoke test: it proves the app can actually start.
+      # makes one HTTP request to the /api/health endpoint, then kills it.
+      # Uses /api/health (not /api/products) — lightweight, no file I/O.
       - name: Smoke test — server starts and responds
         run: |
-          node index.js &
+          node index.js > /tmp/server.log 2>&1 &
           SERVER_PID=$!
           echo "Server PID: $SERVER_PID"
-          sleep 3
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/products || echo "000")
-          echo "HTTP status: $HTTP_STATUS"
+          # Wait up to 10s for the server to bind
+          for i in $(seq 1 10); do
+            sleep 1
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/api/health 2>/dev/null || echo "000")
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "✅ Server ready after ${i}s (HTTP $HTTP_STATUS)"
+              break
+            fi
+            echo "  Waiting... attempt $i (HTTP $HTTP_STATUS)"
+          done
           kill $SERVER_PID 2>/dev/null || true
+          echo "--- Server log ---"
+          cat /tmp/server.log || true
           if [ "$HTTP_STATUS" != "200" ]; then
             echo "❌ Smoke test failed — server returned $HTTP_STATUS (expected 200)"
             exit 1
           fi
-          echo "✅ Smoke test passed — server is responding"
+          echo "✅ Smoke test passed"
 
   # ═══════════════════════════════════════════════════════════════════════
   # JOB 2: Frontend CI — Vite / React SPA
