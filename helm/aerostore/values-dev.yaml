@@ -1,0 +1,37 @@
+# helm/aerostore/values-dev.yaml
+#
+# DEVELOPMENT ENVIRONMENT OVERRIDES
+#
+# Only the values that differ from defaults (values.yaml) are specified here.
+# Helm merges these with values.yaml — dev-specific values win.
+#
+# Usage:
+#   helm install aerostore-dev ./helm/aerostore \
+#     --values helm/aerostore/values-dev.yaml \
+#     --namespace dev
+#
+# Key differences from production:
+#   - Single replica (no HA needed in dev)
+#   - HPA disabled (saves resources in dev cluster)
+#   - Debug logging enabled
+#   - Smaller resource requests
+
+image:
+  tag: "1.16.1"         # Use an older/known-stable image in dev
+
+replicaCount: 1         # Single replica in dev — no need for HA
+
+autoscaling:
+  enabled: false        # No HPA in dev — replicas are fixed
+
+config:
+  appEnv: "development"
+  logLevel: "debug"     # Verbose logging in dev
+
+resources:
+  requests:
+    cpu: "50m"          # Smaller requests in dev to save cluster resources
+    memory: "32Mi"
+  limits:
+    cpu: "100m"
+    memory: "64Mi"

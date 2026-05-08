@@ -1,0 +1,77 @@
+{{/*
+helm/aerostore/templates/deployment.yaml
+
+Deployment template — renders using values from values.yaml (or override files).
+
+Every {{ .Values.X }} reference pulls from values.yaml, which means:
+  - No hardcoded values in this template
+  - Same template deploys to dev, staging, and production
+  - Changing image.tag requires only: helm upgrade aerostore ./helm/aerostore --set image.tag=1.18.0
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aerostore.fullname" . }}
+  labels:
+    {{- include "aerostore.labels" . | nindent 4 }}
+  annotations:
+    # Tracks the Helm release and chart version for auditability
+    meta.helm.sh/release-name: {{ .Release.Name }}
+    meta.helm.sh/release-namespace: {{ .Release.Namespace }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  # Only set a fixed replica count when HPA is disabled.
+  # When HPA is enabled, it controls the replica count — setting it here
+  # would conflict with HPA's scaling decisions.
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+
+  revisionHistoryLimit: 5
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: {{ .Values.strategy.maxSurge }}
+      maxUnavailable: {{ .Values.strategy.maxUnavailable }}
+
+  selector:
+    matchLabels:
+      {{- include "aerostore.selectorLabels" . | nindent 6 }}
+
+  template:
+    metadata:
+      labels:
+        {{- include "aerostore.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+
+          # Environment variables from the ConfigMap rendered by this chart
+          envFrom:
+            - configMapRef:
+                name: {{ include "aerostore.fullname" . }}-config
+
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.liveness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.readiness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}

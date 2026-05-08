@@ -1,0 +1,22 @@
+{{/*
+helm/aerostore/templates/service.yaml
+
+Service template — type and port are configurable via values.yaml.
+In dev: ClusterIP (internal only)
+In production: ClusterIP (internal, with Ingress handling external traffic)
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aerostore.fullname" . }}
+  labels:
+    {{- include "aerostore.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "aerostore.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP

@@ -1,0 +1,20 @@
+{{/*
+helm/aerostore/templates/configmap.yaml
+
+ConfigMap template — application configuration rendered from values.yaml.
+
+This replaces the static k8s/basics/app-configmap.yaml file.
+Values are pulled from .Values.config.* so they change per environment
+without touching any template files.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aerostore.fullname" . }}-config
+  labels:
+    {{- include "aerostore.labels" . | nindent 4 }}
+data:
+  APP_ENV:      {{ .Values.config.appEnv | quote }}
+  APP_PORT:     {{ .Values.config.appPort | quote }}
+  LOG_LEVEL:    {{ .Values.config.logLevel | quote }}
+  DB_POOL_SIZE: {{ .Values.config.dbPoolSize | quote }}

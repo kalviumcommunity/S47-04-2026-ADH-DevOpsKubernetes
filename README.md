@@ -377,6 +377,45 @@ In a production environment, every deployment is a risk. The rolling update stra
 
 > For the full maxSurge/maxUnavailable mechanics, revision history design, bad release scenario, and RollingUpdate vs Recreate comparison, see [Kubernetes Rolling Updates & Rollbacks](docs/Kubernetes-Rolling-Updates-And-Rollbacks.md).
 
+### Phase 13: Helm — Kubernetes Package Management ✅ *(NEW)*
+We created a complete Helm chart for the AeroStore application that packages the Deployment, Service, HPA, and ConfigMap into a single versioned release, with environment-specific configuration managed through separate values files — eliminating the need to manually apply and maintain multiple YAML files per environment.
+
+**What this phase covers:**
+- How a **Helm chart** packages all Kubernetes manifests into a single versioned, installable unit.
+- How **`values.yaml`** defines the default configuration for the chart, and how **`values-dev.yaml`** and **`values-prod.yaml`** provide environment-specific overrides — only listing differences, not duplicating the full file.
+- How **Helm templates** use `{{ .Values.X }}` to render environment-specific YAML at install time — the same `deployment.yaml` template produces a 1-replica dev deployment or a 5-replica prod deployment depending on which values file is used.
+- How **conditional rendering** (`{{- if .Values.autoscaling.enabled }}`) creates or skips resources per environment — HPA exists in prod, not in dev.
+- How **`helm install`**, **`helm upgrade`**, and **`helm rollback`** manage the full application lifecycle with a single command and full revision history (`helm history`).
+- How `helm template` and `helm lint` let you preview and validate rendered YAML before applying anything to the cluster.
+
+**Key principle:** *Helm replaces N files × M environments = N×M YAML files with 1 chart + M small override files. Every environment is reproducible, auditable, and upgradeable with a single command.*
+
+- *Docs:* [Kubernetes Helm Package Management](docs/Kubernetes-Helm-Package-Management.md).
+- *Chart:* [`helm/aerostore/`](helm/aerostore/) — Chart.yaml, values.yaml, values-dev.yaml, values-prod.yaml, templates/.
+- *Demo:* [`helm/aerostore/helm-demo.md`](helm/aerostore/helm-demo.md) — complete install/upgrade/rollback command sequence.
+
+#### 📊 Helm Package Management Diagram
+
+![Kubernetes Helm Package Management Diagram](docs/k8s-helm-diagram.png)
+
+```
+values.yaml (defaults)
+  + values-dev.yaml         → helm install aerostore-dev  → 1 replica, no HPA
+  + values-prod.yaml        → helm install aerostore-prod → 5 replicas, HPA on
+
+templates/ + values → Helm Engine → rendered YAML → cluster
+
+helm upgrade --set image.tag=1.18.0  → new revision  → rolling update
+helm rollback aerostore-prod 1       → prev revision → instant recovery
+helm history aerostore-prod          → full audit trail
+```
+
+#### 💡 Reflection: From Files to Releases
+
+Managing raw YAML files is managing files. Helm shifts the model to managing **releases** — named, versioned, auditable installations of a packaged application. This is the difference between knowing which files were applied (error-prone) and knowing which revision of which chart is running (deterministic). In a CI/CD pipeline, a single `helm upgrade` command replaces a complex sequence of `kubectl apply` commands, version tracking, and environment-specific configuration scripts.
+
+> For the full chart structure walkthrough, values merging explanation, Helm vs kubectl comparison, and scenario analysis, see [Kubernetes Helm Package Management](docs/Kubernetes-Helm-Package-Management.md).
+
 ---
 
 ## 💻 Developer Guide: Running the K8s Environment
@@ -392,6 +431,7 @@ We have a helper script to easily create the `kind` cluster:
 ### 2. Apply the Workloads & Networking
 Deploy the application manifests and all Services:
 ```bash
+# Option A: Raw kubectl (individual manifests)
 # Apply ConfigMap and Secret first (Pods depend on them)
 kubectl apply -f k8s/basics/app-configmap.yaml
 kubectl apply -f k8s/basics/app-secret.yaml
@@ -405,6 +445,14 @@ kubectl apply -f k8s/basics/nginx-service.yaml
 kubectl apply -f k8s/basics/backend-deployment.yaml
 kubectl apply -f k8s/basics/backend-service.yaml
 kubectl apply -f k8s/basics/backend-hpa.yaml
+
+# Option B: Helm (recommended — single command, versioned release)
+helm install aerostore-dev ./helm/aerostore \
+  --values helm/aerostore/values-dev.yaml
+
+# Or for production:
+helm install aerostore-prod ./helm/aerostore \
+  --values helm/aerostore/values-prod.yaml
 ```
 
 ### 3. Expose to Localhost
@@ -421,7 +469,20 @@ kubectl port-forward service/aerostore-frontend-service 8080:80
 ```text
 ├── backend/          # Express API source code
 ├── frontend/         # React SPA source code
-├── k8s/              # Kubernetes declarative YAML manifests
+├── helm/             # Helm chart for the AeroStore application
+│   └── aerostore/                           ← NEW: Complete Helm chart
+│       ├── Chart.yaml                       (chart metadata)
+│       ├── values.yaml                      (default values)
+│       ├── values-dev.yaml                  (dev overrides)
+│       ├── values-prod.yaml                 (prod overrides)
+│       ├── helm-demo.md                     (demo commands)
+│       └── templates/
+│           ├── _helpers.tpl                 (named templates)
+│           ├── deployment.yaml
+│           ├── service.yaml
+│           ├── hpa.yaml                     (conditional on autoscaling.enabled)
+│           └── configmap.yaml
+├── k8s/              # Raw Kubernetes declarative YAML manifests
 │   ├── kind-cluster-config.yaml
 │   └── basics/
 │       ├── rollout-demo.md              ← NEW: Rolling update + rollback demo commands
@@ -441,8 +502,10 @@ kubectl port-forward service/aerostore-frontend-service 8080:80
 │       └── nginx-replicaset.yaml
 ├── scripts/          # Automation scripts (e.g., manage-k8s-cluster.sh)
 ├── docs/             # Extensive documentation on DevOps concepts
-│   ├── Kubernetes-Rolling-Updates-And-Rollbacks.md    ← NEW: Rolling update docs
-│   ├── k8s-rolling-update-diagram.png                 ← NEW: Rollout diagram
+│   ├── Kubernetes-Helm-Package-Management.md          ← NEW: Helm docs
+│   ├── k8s-helm-diagram.png                           ← NEW: Helm diagram
+│   ├── Kubernetes-Rolling-Updates-And-Rollbacks.md
+│   ├── k8s-rolling-update-diagram.png
 │   ├── Kubernetes-Scaling-And-HPA.md
 │   ├── k8s-scaling-hpa-diagram.png
 │   ├── Kubernetes-Resource-Management.md
