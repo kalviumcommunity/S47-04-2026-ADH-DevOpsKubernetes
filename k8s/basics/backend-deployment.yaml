@@ -25,8 +25,44 @@ metadata:
   name: aerostore-backend
   labels:
     app: backend
+  annotations:
+    # kubernetes.io/change-cause is recorded in rollout history.
+    # Run: kubectl rollout history deployment/aerostore-backend
+    # to see all revisions with their change-cause messages.
+    # This is the equivalent of a release note attached to each revision.
+    kubernetes.io/change-cause: "update to nginx:1.17.0 — add explicit rolling update strategy and revision history tracking"
 spec:
-  replicas: 2
+  replicas: 3
+
+  # ─────────────────────────────────────────────────────────────────────
+  # REVISION HISTORY
+  # How many old ReplicaSets to keep around for rollback.
+  # Each stored ReplicaSet is a complete snapshot of the Pod template
+  # at that revision — rollback is instant because it reactivates the
+  # existing ReplicaSet rather than rebuilding anything.
+  # ─────────────────────────────────────────────────────────────────────
+  revisionHistoryLimit: 5
+
+  # ─────────────────────────────────────────────────────────────────────
+  # ROLLING UPDATE STRATEGY
+  # Controls how Kubernetes transitions from the old version to the new
+  # version, ensuring the application stays available during the update.
+  # ─────────────────────────────────────────────────────────────────────
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # maxSurge: how many EXTRA Pods above the desired count are allowed
+      # during the rollout. 1 means we can have replicas+1 = 4 Pods running
+      # temporarily while the update is in progress.
+      # Higher maxSurge = faster rollout (more new Pods created at once).
+      maxSurge: 1
+
+      # maxUnavailable: how many Pods can be unavailable (not Ready) at
+      # any point during the rollout. 0 means zero downtime — Kubernetes
+      # will never terminate an old Pod until a new one is Ready and in
+      # the Service's endpoint list.
+      # 0 = zero-downtime rollout. 1 = slightly faster but 1 Pod unavailable.
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: backend
@@ -37,9 +73,11 @@ spec:
     spec:
       containers:
         - name: backend
-          # Using nginx as a stand-in — in production this would be the actual
-          # Node.js backend image (kalviaki0/devops-backend:commit-sha)
-          image: nginx:1.16.1
+          # v2: Updated from nginx:1.16.1 → nginx:1.17.0
+          # This image change triggers the rolling update.
+          # The Deployment controller detects the change and creates a new
+          # ReplicaSet for this revision while keeping the old one.
+          image: nginx:1.17.0
           ports:
             - containerPort: 80
 
