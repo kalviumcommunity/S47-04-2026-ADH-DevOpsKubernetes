@@ -1,0 +1,69 @@
+# k8s/rbac/cicd-deployer-role.yaml
+#
+# Role: cicd-deployer
+# Namespace: dev-team
+#
+# PURPOSE:
+#   Grants a CI/CD pipeline the minimum permissions needed to update
+#   application images and check deployment status — nothing more.
+#
+# PRINCIPLE OF LEAST PRIVILEGE:
+#   A CI/CD pipeline only needs to:
+#   1. Read the current Deployment state (to determine what changed)
+#   2. Update the Deployment image (helm upgrade or kubectl set image)
+#   3. Watch the rollout status (to determine if deployment succeeded)
+#
+#   It must NOT be able to:
+#   - Delete Deployments (destroy production workloads)
+#   - Read Secrets (pipeline doesn't need database passwords)
+#   - Access other namespaces (deploy to production from a dev pipeline)
+#   - Create or delete Services, PVCs, or other infrastructure resources
+#
+# SECURITY NOTE:
+#   CI/CD pipelines are a common attack surface. If a pipeline is
+#   compromised, its ServiceAccount's permissions determine the blast
+#   radius. A pipeline that can only update Deployments in one namespace
+#   is contained. A pipeline with cluster-admin is a catastrophic breach.
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cicd-deployer
+  namespace: dev-team
+  labels:
+    team: platform
+    purpose: ci-cd-deployment
+rules:
+  # ── READ CURRENT DEPLOYMENT STATE ─────────────────────────────────────
+  # Pipeline needs to read the current Deployment before updating
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch"]
+
+  # ── UPDATE DEPLOYMENT IMAGE ────────────────────────────────────────────
+  # "update" allows replacing the Deployment spec (new image tag)
+  # "patch"  allows partial updates (--set image.tag=1.18.0)
+  # Note: "create" is intentionally excluded — pipeline should not
+  #       be able to create new Deployments, only update existing ones
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["update", "patch"]
+
+  # ── READ POD STATUS FOR ROLLOUT VERIFICATION ──────────────────────────
+  # After deployment, the pipeline checks that new Pods are Running
+  - apiGroups: [""]
+    resources: ["pods", "pods/status"]
+    verbs: ["get", "list", "watch"]
+
+  # ── READ EVENTS FOR FAILURE DIAGNOSIS ─────────────────────────────────
+  # Pipeline can read Events to understand why a rollout failed
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list"]
+
+  # EXPLICITLY NOT GRANTED:
+  # - Secrets (pipeline gets credentials from CI/CD vault, not K8s Secrets)
+  # - create/delete on Deployments
+  # - Services, Ingress, PVCs, ConfigMaps (infrastructure, not pipeline concern)
+  # - pods/exec (no shell access to running containers)
+  # - Any resource in any other namespace

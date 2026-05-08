@@ -1,0 +1,60 @@
+# k8s/rbac/role-bindings.yaml
+#
+# RoleBindings — connect Roles to ServiceAccounts
+#
+# HOW ROLEBINDINGS WORK:
+#   A RoleBinding says: "In namespace X, grant the permissions defined
+#   in Role Y to subject Z (user, group, or ServiceAccount)."
+#
+#   Without a RoleBinding, a Role exists but has no effect.
+#   The API server checks: does this ServiceAccount have a RoleBinding
+#   to a Role that permits this verb on this resource in this namespace?
+#   If no → 403 Forbidden. If yes → request proceeds.
+#
+# WHY ROLEBINDING, NOT CLUSTERROLEBINDING:
+#   A ClusterRoleBinding grants permissions across ALL namespaces.
+#   A RoleBinding grants permissions only in the namespace it exists in.
+#
+#   These bindings live in the dev-team namespace. The developer SA can
+#   only read resources in dev-team. If the same SA tries to list Pods
+#   in the production namespace, the API server finds no RoleBinding
+#   for it there and returns 403 Forbidden — even if the Role exists
+#   in dev-team, it does not cross namespace boundaries.
+
+---
+# Binding 1: Developer ServiceAccount → dev-viewer Role (read-only)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dev-viewer-binding
+  namespace: dev-team          # Binding lives in the same namespace as the Role
+  labels:
+    team: developers
+roleRef:
+  # The Role being granted
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: dev-viewer             # Must match the Role name exactly
+subjects:
+  # The ServiceAccount receiving the permissions
+  - kind: ServiceAccount
+    name: aerostore-dev-sa     # Must match the ServiceAccount name
+    namespace: dev-team        # ServiceAccount must be in the same namespace
+
+---
+# Binding 2: CI/CD ServiceAccount → cicd-deployer Role
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cicd-deployer-binding
+  namespace: dev-team
+  labels:
+    team: platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cicd-deployer
+subjects:
+  - kind: ServiceAccount
+    name: aerostore-cicd-sa
+    namespace: dev-team

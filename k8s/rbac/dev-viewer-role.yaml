@@ -1,0 +1,97 @@
+# k8s/rbac/dev-viewer-role.yaml
+#
+# Role: dev-viewer
+# Namespace: dev-team
+#
+# PURPOSE:
+#   Grants read-only access to common workload resources in the dev-team
+#   namespace. Developers can observe application state without being able
+#   to modify, delete, or create anything.
+#
+# PRINCIPLE OF LEAST PRIVILEGE:
+#   This role grants ONLY what developers need for day-to-day visibility:
+#   - See which Pods are running and what their logs say
+#   - See which Services and Deployments exist
+#   - Read ConfigMaps (non-sensitive config values)
+#
+#   It explicitly DOES NOT grant:
+#   - create, update, patch, delete verbs → no modifications
+#   - access to Secrets → sensitive data stays protected
+#   - exec or port-forward on Pods → no shell access to running containers
+#   - access to other namespaces → Role is namespace-scoped
+#
+# WHY A ROLE, NOT A CLUSTERROLE:
+#   A ClusterRole applies across ALL namespaces in the cluster. If this
+#   were a ClusterRole with a ClusterRoleBinding, developers could read
+#   Pods in the production namespace, the monitoring namespace, or any
+#   other team's namespace — a clear security violation.
+#
+#   A Role is scoped to a single namespace (dev-team). Even if someone
+#   tries to use these credentials to access the production namespace,
+#   the API server rejects the request with 403 Forbidden — there is
+#   no RoleBinding for this ServiceAccount in the production namespace.
+#
+# VERBS REFERENCE:
+#   get    → read a single named resource (kubectl get pod my-pod)
+#   list   → read all resources of a type (kubectl get pods)
+#   watch  → receive streaming updates (kubectl get pods -w)
+#   create → create a new resource
+#   update → replace a resource entirely
+#   patch  → partially modify a resource
+#   delete → delete a resource
+#   exec   → execute commands in a container (not a standard API verb — controlled by subresources)
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dev-viewer
+  namespace: dev-team         # Role only applies within this namespace
+  labels:
+    team: developers
+    purpose: read-only-access
+rules:
+  # ── PODS ───────────────────────────────────────────────────────────────
+  # Allow viewing Pod status and streaming logs
+  # pods/log is a subresource — must be listed separately from pods
+  - apiGroups: [""]           # "" = core API group (v1 resources)
+    resources: ["pods", "pods/log", "pods/status"]
+    verbs: ["get", "list", "watch"]
+
+  # ── SERVICES ──────────────────────────────────────────────────────────
+  # Allow viewing Services and their endpoints
+  - apiGroups: [""]
+    resources: ["services", "endpoints"]
+    verbs: ["get", "list", "watch"]
+
+  # ── DEPLOYMENTS & REPLICASETS ─────────────────────────────────────────
+  # Allow viewing Deployment spec and rollout status
+  # apps group covers: Deployments, ReplicaSets, StatefulSets, DaemonSets
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch"]
+
+  # ── CONFIGMAPS ────────────────────────────────────────────────────────
+  # Allow reading ConfigMaps (non-sensitive config)
+  # Secrets are NOT included — even read access to Secrets is denied
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+
+  # ── EVENTS ────────────────────────────────────────────────────────────
+  # Allow reading Events — essential for debugging without modifying anything
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+
+  # ── HPA ───────────────────────────────────────────────────────────────
+  # Allow viewing HPA status (useful for capacity planning discussions)
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch"]
+
+  # EXPLICITLY NOT GRANTED (for clarity — unlisted = denied by default):
+  # - Secrets (any verb)
+  # - pods/exec (shell access to containers)
+  # - pods/portforward
+  # - create/update/patch/delete on any resource
+  # - Any resource in any other namespace
