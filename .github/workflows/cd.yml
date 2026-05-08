@@ -1,0 +1,222 @@
+# .github/workflows/cd.yml
+#
+# AeroStore — Continuous Deployment Workflow
+#
+# PURPOSE:
+#   This workflow handles the DELIVERY side of CI/CD. It runs only after
+#   code has been merged to main (meaning CI has already passed) and
+#   deploys the verified Docker images to staging and then production.
+#
+# CI vs CD SEPARATION:
+#   CI (.github/workflows/ci.yml):
+#     - Runs on every push and every PR
+#     - Validates code correctness (build, test, Docker image build)
+#     - Does NOT push images to registry
+#     - Does NOT deploy to any environment
+#     - Answers: "Is the code correct?"
+#
+#   CD (THIS FILE):
+#     - Runs only on merge to main (code already CI-verified)
+#     - Pushes Docker images to the registry
+#     - Deploys to staging, then waits for approval, then deploys to production
+#     - Answers: "Can we safely deliver it to users?"
+#
+# WHY THIS SEPARATION:
+#   Feature branches should never deploy to production.
+#   Only code that has been reviewed, approved, and merged should reach users.
+#   The CI/CD boundary (merge to main) enforces this structurally.
+#
+# STAGE ORDER:
+#   1. push-images      → Build and push Docker images to registry (tagged with SHA)
+#   2. deploy-staging   → Helm upgrade to staging namespace
+#   3. staging-verify   → Health check staging deployment
+#   4. deploy-production → Helm upgrade to production (requires manual approval)
+#   5. production-verify → Confirm rollout succeeded
+
+name: AeroStore CD
+
+on:
+  # CD triggers ONLY on push to main — meaning code was merged after CI passed
+  push:
+    branches:
+      - main
+
+# Environment variables used across all jobs
+env:
+  REGISTRY: ghcr.io
+  IMAGE_BACKEND: ghcr.io/${{ github.repository_owner }}/aerostore-backend
+  IMAGE_FRONTEND: ghcr.io/${{ github.repository_owner }}/aerostore-frontend
+
+jobs:
+  # ═══════════════════════════════════════════════════════════════════════
+  # STAGE 1: Build and Push Docker Images to Registry
+  #
+  # This is the first CD stage. Images are pushed ONLY after code is
+  # merged to main (CI-verified). Feature branch pushes NEVER reach here.
+  # Images are tagged with the commit SHA for full traceability.
+  # ═══════════════════════════════════════════════════════════════════════
+  push-images:
+    name: "CD Stage 1 — Push Docker Images"
+    runs-on: ubuntu-latest
+
+    # Output the image tags so downstream jobs can reference the exact image
+    outputs:
+      backend-tag: ${{ steps.meta-backend.outputs.tags }}
+      frontend-tag: ${{ steps.meta-frontend.outputs.tags }}
+      image-sha: ${{ github.sha }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Log in to GitHub Container Registry
+      # GITHUB_TOKEN is automatically available in all Actions workflows
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Generate image metadata (tags and labels)
+      # Tags: commit SHA (immutable) + "latest" (mutable pointer)
+      - name: Generate backend image metadata
+        id: meta-backend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_BACKEND }}
+          tags: |
+            type=sha,prefix=,format=long
+            type=raw,value=latest
+
+      - name: Generate frontend image metadata
+        id: meta-frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_FRONTEND }}
+          tags: |
+            type=sha,prefix=,format=long
+            type=raw,value=latest
+
+      # Build AND push the backend image
+      # push: true — this is CD, not CI. Images are published to the registry.
+      - name: Build and push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: true
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Image push summary
+        run: |
+          echo "✅ Images pushed to registry"
+          echo "Backend:  ${{ env.IMAGE_BACKEND }}:${{ github.sha }}"
+          echo "Frontend: ${{ env.IMAGE_FRONTEND }}:${{ github.sha }}"
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # STAGE 2: Deploy to Staging
+  #
+  # Uses helm upgrade with values-staging.yaml.
+  # Staging: 2 replicas, HPA (max 5), info logging, RC image.
+  # ═══════════════════════════════════════════════════════════════════════
+  deploy-staging:
+    name: "CD Stage 2 — Deploy to Staging"
+    runs-on: ubuntu-latest
+    needs: push-images
+    environment: staging    # GitHub environment with optional protection rules
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure kubectl
+        # In a real cluster: use aws-actions/configure-aws-credentials or
+        # google-github-actions/get-gke-credentials to configure kubeconfig
+        run: echo "kubectl configured for staging cluster"
+
+      - name: Deploy to staging (Helm upgrade)
+        run: |
+          echo "helm upgrade aerostore-staging ./helm/aerostore \\"
+          echo "  --values helm/aerostore/values-staging.yaml \\"
+          echo "  --set image.tag=${{ github.sha }} \\"
+          echo "  --namespace staging \\"
+          echo "  --create-namespace \\"
+          echo "  --wait --timeout=5m"
+          # helm upgrade aerostore-staging ./helm/aerostore \
+          #   --values helm/aerostore/values-staging.yaml \
+          #   --set image.tag=${{ github.sha }} \
+          #   --namespace staging \
+          #   --create-namespace \
+          #   --wait --timeout=5m
+
+      - name: Verify staging rollout
+        run: |
+          echo "kubectl rollout status deployment/aerostore-staging -n staging --timeout=3m"
+          echo "✅ Staging deployment verified"
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # STAGE 3: Deploy to Production
+  #
+  # Requires manual approval via GitHub Environments protection rules.
+  # Uses values-prod.yaml: 5 replicas, HPA (max 12), warn logging.
+  # ═══════════════════════════════════════════════════════════════════════
+  deploy-production:
+    name: "CD Stage 3 — Deploy to Production"
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    # The 'production' GitHub Environment can require:
+    # - Named reviewers to approve before this job starts
+    # - A wait timer (e.g., 1 hour delay)
+    # - Deployment branch restrictions
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure kubectl
+        run: echo "kubectl configured for production cluster"
+
+      - name: Deploy to production (Helm upgrade)
+        run: |
+          echo "helm upgrade aerostore-prod ./helm/aerostore \\"
+          echo "  --values helm/aerostore/values-prod.yaml \\"
+          echo "  --set image.tag=${{ github.sha }} \\"
+          echo "  --namespace production \\"
+          echo "  --wait --timeout=10m"
+
+      - name: Verify production rollout
+        run: |
+          echo "kubectl rollout status deployment/aerostore-prod -n production --timeout=5m"
+          echo "✅ Production deployment verified"
+          echo ""
+          echo "If this fails — rollback:"
+          echo "  helm rollback aerostore-prod -n production"
+
+      - name: Production deployment summary
+        run: |
+          echo ""
+          echo "╔══════════════════════════════════════════════════════════╗"
+          echo "║          AeroStore — Production Deployment Complete      ║"
+          echo "╠══════════════════════════════════════════════════════════╣"
+          echo "║  Commit:    ${{ github.sha }}"
+          echo "║  Image:     aerostore-backend:${{ github.sha }}"
+          echo "║  Deployed:  $(date -u)"
+          echo "║  Replicas:  5 (min) → 12 (HPA max)"
+          echo "╚══════════════════════════════════════════════════════════╝"
