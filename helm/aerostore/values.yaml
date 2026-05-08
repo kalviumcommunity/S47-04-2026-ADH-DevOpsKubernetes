@@ -1,0 +1,82 @@
+# helm/aerostore/values.yaml
+#
+# DEFAULT VALUES — used when no override file is specified.
+# These are the production-sensible defaults.
+# Override any value with: helm install --values values-dev.yaml
+# or per-key: helm install --set replicaCount=1
+#
+# This single file replaces environment-specific configuration that was
+# previously duplicated across multiple kubectl apply commands and
+# environment-specific YAML files.
+
+# ─────────────────────────────────────────────────────────────────────────
+# IMAGE CONFIGURATION
+# ─────────────────────────────────────────────────────────────────────────
+image:
+  repository: nginx
+  tag: "1.17.0"
+  pullPolicy: IfNotPresent
+
+# ─────────────────────────────────────────────────────────────────────────
+# REPLICA CONFIGURATION
+# ─────────────────────────────────────────────────────────────────────────
+replicaCount: 3
+
+# ─────────────────────────────────────────────────────────────────────────
+# SERVICE CONFIGURATION
+# ─────────────────────────────────────────────────────────────────────────
+service:
+  type: ClusterIP
+  port: 80
+
+# ─────────────────────────────────────────────────────────────────────────
+# HORIZONTAL POD AUTOSCALER
+# Set enabled: false to skip HPA creation (e.g., in dev environment)
+# ─────────────────────────────────────────────────────────────────────────
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 8
+  targetCPUUtilizationPercentage: 50
+
+# ─────────────────────────────────────────────────────────────────────────
+# RESOURCE REQUESTS AND LIMITS
+# ─────────────────────────────────────────────────────────────────────────
+resources:
+  requests:
+    cpu: "100m"
+    memory: "64Mi"
+  limits:
+    cpu: "200m"
+    memory: "128Mi"
+
+# ─────────────────────────────────────────────────────────────────────────
+# APPLICATION CONFIGURATION (passed to ConfigMap → Pod env vars)
+# ─────────────────────────────────────────────────────────────────────────
+config:
+  appEnv: "production"
+  appPort: "80"
+  logLevel: "info"
+  dbPoolSize: "10"
+
+# ─────────────────────────────────────────────────────────────────────────
+# ROLLING UPDATE STRATEGY
+# ─────────────────────────────────────────────────────────────────────────
+strategy:
+  maxSurge: 1
+  maxUnavailable: 0
+
+# ─────────────────────────────────────────────────────────────────────────
+# HEALTH PROBES
+# ─────────────────────────────────────────────────────────────────────────
+probes:
+  liveness:
+    path: /
+    initialDelaySeconds: 15
+    periodSeconds: 20
+    failureThreshold: 3
+  readiness:
+    path: /
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    failureThreshold: 3

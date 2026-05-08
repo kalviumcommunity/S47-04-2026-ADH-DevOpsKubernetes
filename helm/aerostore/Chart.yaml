@@ -1,0 +1,17 @@
+apiVersion: v2
+name: aerostore
+description: |
+  A Helm chart for the AeroStore application — packages the backend
+  Deployment, Service, HPA, and ConfigMap into a single versioned release.
+
+  This chart replaces the individual kubectl apply commands previously used
+  to manage k8s/basics/*.yaml files. With Helm, the entire application is
+  installed, upgraded, and rolled back as a single atomic release.
+
+type: application
+
+# Chart version — bump this whenever the chart structure changes
+version: 0.1.0
+
+# Application version — the Docker image tag being deployed
+appVersion: "1.17.0"

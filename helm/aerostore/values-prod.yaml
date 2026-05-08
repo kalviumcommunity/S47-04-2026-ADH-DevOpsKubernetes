@@ -1,0 +1,40 @@
+# helm/aerostore/values-prod.yaml
+#
+# PRODUCTION ENVIRONMENT OVERRIDES
+#
+# Only the values that differ from defaults (values.yaml) are specified here.
+# Helm merges these with values.yaml — prod-specific values win.
+#
+# Usage:
+#   helm install aerostore-prod ./helm/aerostore \
+#     --values helm/aerostore/values-prod.yaml \
+#     --namespace production
+#
+# Key differences from defaults:
+#   - Higher replica count for availability
+#   - Wider HPA range for traffic spikes
+#   - Larger resource limits for production load
+#   - Warn-level logging (not debug — reduces log volume and cost)
+
+image:
+  tag: "1.17.0"         # Pinned to exact production-verified version
+
+replicaCount: 5         # Higher baseline replicas in production
+
+autoscaling:
+  enabled: true
+  minReplicas: 3        # Never below 3 in production
+  maxReplicas: 12       # Higher ceiling for production traffic peaks
+  targetCPUUtilizationPercentage: 50
+
+config:
+  appEnv: "production"
+  logLevel: "warn"      # Only log warnings and errors in production
+
+resources:
+  requests:
+    cpu: "200m"         # Larger requests for production load
+    memory: "128Mi"
+  limits:
+    cpu: "500m"
+    memory: "256Mi"

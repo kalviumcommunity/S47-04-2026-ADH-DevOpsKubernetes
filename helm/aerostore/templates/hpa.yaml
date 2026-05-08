@@ -1,0 +1,34 @@
+{{/*
+helm/aerostore/templates/hpa.yaml
+
+HPA template — only rendered when autoscaling.enabled is true.
+
+The {{- if .Values.autoscaling.enabled }} guard means:
+  - dev install (values-dev.yaml: autoscaling.enabled=false) → NO HPA created
+  - prod install (values-prod.yaml: autoscaling.enabled=true) → HPA created
+
+This is the power of Helm values: the same chart, the same template, produces
+different cluster resources depending on the environment configuration.
+*/}}
+{{- if .Values.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "aerostore.fullname" . }}-hpa
+  labels:
+    {{- include "aerostore.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "aerostore.fullname" . }}
+  minReplicas: {{ .Values.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }}
+{{- end }}
