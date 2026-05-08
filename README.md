@@ -159,6 +159,42 @@ CI/CD pipelines are coordination tools — they automate the sequencing and trig
 
 > For full details including the blast radius analysis, pipeline change impact assessment, and the responsibility boundary case study, see [CI/CD Execution Model Documentation](docs/CICD-Execution-Model-And-Responsibilities.md).
 
+### Phase 7: Kubernetes Service Discovery & Internal Networking ✅ *(NEW)*
+We implemented and documented DNS-based service discovery inside the Kubernetes cluster — demonstrating how application components communicate with each other using stable Service names instead of ephemeral Pod IP addresses.
+
+**What this phase covers:**
+- Why **Pod IPs are ephemeral** and hardcoding them causes unreliable communication.
+- How a **Kubernetes Service** provides a stable ClusterIP and a DNS name that survives Pod restarts, rescheduling, and rolling updates.
+- How **CoreDNS** (the cluster's built-in DNS resolver) automatically resolves Service names to ClusterIPs.
+- How `kube-proxy` load-balances traffic across all healthy Pods behind a Service using label selectors.
+- A **working verification** of DNS resolution and Pod-to-Service communication from inside a debug Pod.
+
+**Key principle:** *Service names are the stable endpoints inside a Kubernetes cluster — not Pod IPs.* Any component that needs to communicate with another should use `http://<service-name>:<port>`. Kubernetes handles all routing, load balancing, and failover automatically.
+
+- *Docs:* [Kubernetes Service Discovery & Networking](docs/Kubernetes-Service-Discovery-And-Networking.md).
+- *Manifests:* [`k8s/basics/backend-service.yaml`](k8s/basics/backend-service.yaml), [`k8s/basics/curl-client-pod.yaml`](k8s/basics/curl-client-pod.yaml).
+
+#### 📊 Service Discovery Diagram
+
+![Kubernetes Service Discovery Diagram](docs/k8s-service-discovery-diagram.png)
+
+```
+curl-client Pod
+      ↓  curl http://aerostore-backend-service:3001
+   CoreDNS
+      ↓  resolves to stable ClusterIP
+aerostore-backend-service (ClusterIP)
+      ↓  load balances via label selector
+backend Pod 1 | backend Pod 2 | backend Pod 3
+(IPs change on restart — Service name stays stable)
+```
+
+#### 💡 Why Service Discovery Matters
+
+Without Services, any Pod restart would break inter-component communication because Pod IPs change. With Services and DNS, the name `aerostore-backend-service` always resolves to the correct running Pods — regardless of how many times they've been replaced, rescheduled, or scaled.
+
+> For the full DNS resolution flow, verification commands, and scalability analysis, see [Kubernetes Service Discovery & Networking](docs/Kubernetes-Service-Discovery-And-Networking.md).
+
 ---
 
 ## 💻 Developer Guide: Running the K8s Environment
@@ -172,10 +208,11 @@ We have a helper script to easily create the `kind` cluster:
 ```
 
 ### 2. Apply the Workloads & Networking
-Deploy the Nginx application and the Service exposing it:
+Deploy the application manifests and all Services:
 ```bash
 kubectl apply -f k8s/basics/nginx-deployment.yaml
 kubectl apply -f k8s/basics/nginx-service.yaml
+kubectl apply -f k8s/basics/backend-service.yaml
 ```
 
 ### 3. Expose to Localhost
@@ -194,11 +231,19 @@ kubectl port-forward service/aerostore-frontend-service 8080:80
 ├── frontend/         # React SPA source code
 ├── k8s/              # Kubernetes declarative YAML manifests
 │   ├── kind-cluster-config.yaml
-│   └── basics/       # Pods, Deployments, and Services
+│   └── basics/
+│       ├── backend-service.yaml         ← NEW: ClusterIP service for DNS discovery
+│       ├── curl-client-pod.yaml         ← NEW: Debug pod for discovery verification
+│       ├── nginx-deployment.yaml
+│       ├── nginx-service.yaml
+│       ├── nginx-pod.yaml
+│       └── nginx-replicaset.yaml
 ├── scripts/          # Automation scripts (e.g., manage-k8s-cluster.sh)
 ├── docs/             # Extensive documentation on DevOps concepts
-│   ├── CICD-Execution-Model-And-Responsibilities.md ← NEW: CI vs CD responsibilities
-│   ├── cicd-execution-diagram.png                   ← NEW: Execution model diagram
+│   ├── Kubernetes-Service-Discovery-And-Networking.md ← NEW: Service discovery docs
+│   ├── k8s-service-discovery-diagram.png              ← NEW: Discovery diagram
+│   ├── CICD-Execution-Model-And-Responsibilities.md
+│   ├── cicd-execution-diagram.png
 │   ├── Kubernetes-Workload-Lifecycle.md
 │   ├── k8s-lifecycle-diagram.png
 │   ├── Artifact-Flow-Source-To-Cluster.md
