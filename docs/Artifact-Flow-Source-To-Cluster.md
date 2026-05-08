@@ -1,5 +1,7 @@
 # Artifact Flow — From Source Code to Running Cluster
 
+> **Updated after AI review:** This version includes clarity and correctness improvements suggested by AI — specifically around image digest precision, `imagePullPolicy` behavior, security scanning in the CI stage, and expanded rollback verification steps.
+
 > This document explains the complete journey of a code change — from a developer's Git commit to a live, running container inside a Kubernetes cluster. It covers every stage of the CI/CD pipeline, how Docker images are built and versioned, and why immutable artifacts are the foundation of reliable DevOps systems.
 
 ---
@@ -77,6 +79,7 @@ Once triggered, the CI pipeline executes a series of automated steps:
 | **Build** | Compiles the React frontend, verifies the backend | Catches build errors early |
 | **Test** | Runs unit/integration tests | Prevents broken logic from proceeding |
 | **Docker Build** | Runs `docker build` using the project's Dockerfiles | Packages the app + runtime into a container image |
+| **Security Scan** *(recommended)* | Scans the image for known CVEs (e.g., using Trivy or Snyk) | Prevents deploying images with critical vulnerabilities |
 | **Tag** | Assigns a meaningful tag (e.g., Git commit SHA) | Links the image to the exact source code |
 | **Push to Registry** | Uploads the tagged image to Docker Hub | Makes the artifact available for deployment |
 
@@ -102,11 +105,13 @@ Tags are **mutable** — you can push a new image with the same tag, and the old
 
 ### What Is an Image Digest?
 
-An **image digest** is a SHA-256 hash of the image's content. Unlike tags, digests are **immutable** — they are computed from the actual image layers and configuration. If even one byte changes, the digest changes.
+An **image digest** is a SHA-256 hash of the image's **manifest** — the JSON document that describes the image's layers and configuration. Unlike tags, digests are **immutable** and **content-addressable**: they are computed from the image content itself, so if even one byte changes in any layer, the digest changes. This makes digests the most reliable way to reference a specific image build.
 
 ```
 kalviaki0/devops-backend@sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4
 ```
+
+> **Note:** You can retrieve the digest of any image using `docker inspect --format='{{index .RepoDigests 0}}' <image>` or by checking the registry's web UI after pushing.
 
 | Property | Tag | Digest |
 |---|---|---|
@@ -193,6 +198,11 @@ spec:
 ```
 
 When you run `kubectl apply -f deployment.yaml`, Kubernetes compares the desired state (your YAML) with the current state (what's running). If the image tag has changed, Kubernetes triggers a **rolling update**.
+
+> **Important — `imagePullPolicy` behavior:**
+> - If you use a specific tag like `:commit-9f3a1c2`, Kubernetes defaults to `imagePullPolicy: IfNotPresent` — it only pulls if the image isn't already cached on the node.
+> - If you use `:latest`, Kubernetes defaults to `imagePullPolicy: Always` — it pulls every time a pod starts.
+> - For production, always use specific tags (commit SHA or version) and set `imagePullPolicy: IfNotPresent` to avoid unnecessary pulls and ensure deterministic deployments.
 
 ### The Pull and Run Process
 
@@ -341,6 +351,18 @@ kubectl get pods -l app=aerostore-backend
 - **The registry is the source of truth:** The previous image (`commit-7b2e4d1`) still exists in Docker Hub, untouched and unchanged. We don't need to rebuild anything.
 - **Kubernetes rolling update ensures zero downtime:** The rollback creates new pods with the old image before terminating the buggy pods.
 - **The commit → image relationship provides full traceability:** From the running pod, we traced back to the exact code change, identified the issue, and rolled back to a verified artifact — all without touching source code or rebuilding anything.
+
+---
+
+## 10. Common Pitfalls to Avoid
+
+| Pitfall | Why It's Dangerous | What to Do Instead |
+|---|---|---|
+| Using `:latest` tag in production | The tag is mutable — it could point to a different image tomorrow | Use commit SHA tags or digests for production manifests |
+| Rebuilding images for each environment | Different builds may produce subtly different artifacts | Build once in CI, promote the same image across environments |
+| Not scanning images for vulnerabilities | Known CVEs in base images can expose production | Add a security scan step (Trivy, Snyk) in your CI pipeline |
+| Skipping health checks in K8s manifests | Pods with crashed apps report as "Running" | Define `livenessProbe` and `readinessProbe` in your Deployments |
+| Not preserving old images in the registry | Rollback becomes impossible if old images are deleted | Set retention policies that keep at least the last N versions |
 
 ---
 
