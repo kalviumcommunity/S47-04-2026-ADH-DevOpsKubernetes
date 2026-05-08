@@ -4,14 +4,17 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test tests/api.test.js",
+    "test:verbose": "node --test --test-reporter=spec tests/api.test.js",
+    "check": "node --check index.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "AeroStore backend API — Node.js/Express",
   "dependencies": {
     "cors": "^2.8.6",
     "express": "^5.2.1"
   }
 }
+
