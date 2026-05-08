@@ -469,6 +469,49 @@ We documented and formalized the environment-specific Helm values strategy for t
 - *Docs:* [Helm Environment Configuration](docs/Helm-Environment-Configuration.md).
 - *Runbook:* [`helm/aerostore/environments.md`](helm/aerostore/environments.md).
 
+### Phase 16: Persistent Storage — Volumes & PersistentVolumeClaims ✅ *(NEW)*
+We implemented PersistentVolumeClaim-based storage for the AeroStore backend, demonstrating how Kubernetes separates storage from the Pod lifecycle to ensure data survives Pod restarts, crashes, and rescheduling.
+
+**What this phase covers:**
+- Why container filesystems are **ephemeral by default** — any data written inside a container is destroyed when the Pod is deleted.
+- How a **PersistentVolumeClaim (PVC)** requests a slice of durable storage from the cluster that exists independently of any Pod.
+- How the **Pod volume mount** (`volumeMounts` + `volumes.persistentVolumeClaim`) connects the running container to the persistent disk at a specific path.
+- How **access modes** (ReadWriteOnce, ReadWriteMany) control how many Nodes can mount the volume simultaneously.
+- How **StorageClasses** enable dynamic PV provisioning so developers never need to manage raw disks.
+- The **PVC lifecycle**: Pending → Bound → survives Pod deletion → Released on PVC deletion (with configurable reclaim policy).
+
+**Key principle:** *A PVC is the boundary between ephemeral compute (Pods) and durable data (PVs). Deleting a Pod does not delete a PVC. This is what makes running stateful applications — databases, file servers, message queues — safe on Kubernetes.*
+
+- *Docs:* [Kubernetes Persistent Storage](docs/Kubernetes-Persistent-Storage.md).
+- *Manifests:* [`k8s/basics/backend-pvc.yaml`](k8s/basics/backend-pvc.yaml), [`k8s/basics/stateful-demo-pod.yaml`](k8s/basics/stateful-demo-pod.yaml).
+- *Demo:* [`k8s/basics/persistence-demo.md`](k8s/basics/persistence-demo.md).
+
+#### 📊 Persistent Storage Diagram
+
+![Kubernetes Persistent Storage Diagram](docs/k8s-persistent-storage-diagram.png)
+
+```
+WITHOUT PVC:  writes → container layer → Pod deleted → data GONE
+
+WITH PVC:
+  [Pod: stateful-demo]
+    | volumeMount: /data
+    ↓
+  [PVC: backend-uploads-pvc]  STATUS: Bound
+    | bound to
+    ↓
+  [PV: actual disk]  ← data lives here, outside Pod lifecycle
+
+  Pod deleted → PVC still Bound → PV untouched → data intact
+  New Pod → same PVC → same PV → /data/uploads/demo.txt STILL THERE
+```
+
+#### 💡 Reflection: Storage as a First-Class Citizen
+
+Running a Pod without persistent storage is running stateless compute. That's appropriate for web servers and API handlers. But any application that writes data that must outlive the process — a database, an upload service, a cache with persistence enabled — requires a PVC. Without it, Pod restarts silently destroy user data. With it, the Pod is as replaceable as any stateless workload while the data remains safe.
+
+> For the full PVC lifecycle analysis, access mode guide, StorageClass explanation, and the file upload scenario walkthrough, see [Kubernetes Persistent Storage](docs/Kubernetes-Persistent-Storage.md).
+
 ---
 
 ## 💻 Developer Guide: Running the K8s Environment
@@ -543,7 +586,10 @@ kubectl port-forward service/aerostore-frontend-service 8080:80
 ├── k8s/              # Raw Kubernetes declarative YAML manifests
 │   ├── kind-cluster-config.yaml
 │   └── basics/
-│       ├── rollout-demo.md              ← NEW: Rolling update + rollback demo commands
+│       ├── backend-pvc.yaml             ← NEW: PVC for persistent uploads storage
+│       ├── stateful-demo-pod.yaml       ← NEW: Demo pod proving data persistence
+│       ├── persistence-demo.md          ← NEW: Persistence demo commands
+│       ├── rollout-demo.md
 │       ├── backend-hpa.yaml
 │       ├── scaling-demo.md
 │       ├── resource-demo-pod.yaml
@@ -551,7 +597,7 @@ kubectl port-forward service/aerostore-frontend-service 8080:80
 │       ├── probe-demo-pod.yaml
 │       ├── app-configmap.yaml
 │       ├── app-secret.yaml
-│       ├── backend-deployment.yaml      (updated: rolling update strategy + change-cause)
+│       ├── backend-deployment.yaml      (updated: rolling update strategy)
 │       ├── backend-service.yaml
 │       ├── curl-client-pod.yaml
 │       ├── nginx-deployment.yaml
@@ -560,7 +606,9 @@ kubectl port-forward service/aerostore-frontend-service 8080:80
 │       └── nginx-replicaset.yaml
 ├── scripts/          # Automation scripts (e.g., manage-k8s-cluster.sh)
 ├── docs/             # Extensive documentation on DevOps concepts
-│   ├── Helm-Environment-Configuration.md             ← NEW: env-specific values docs
+│   ├── Kubernetes-Persistent-Storage.md              ← NEW: PVC & persistence docs
+│   ├── k8s-persistent-storage-diagram.png            ← NEW: Storage diagram
+│   ├── Helm-Environment-Configuration.md
 │   ├── Kubernetes-Helm-Package-Management.md
 │   ├── k8s-helm-diagram.png
 │   ├── Kubernetes-Rolling-Updates-And-Rollbacks.md

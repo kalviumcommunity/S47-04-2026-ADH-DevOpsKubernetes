@@ -1,0 +1,128 @@
+# k8s/basics/stateful-demo-pod.yaml
+#
+# Stateful Demo Pod — demonstrates data persistence with a PVC
+#
+# PURPOSE:
+#   This Pod writes a timestamped file to a mounted PersistentVolumeClaim,
+#   then sleeps. The file can be verified to survive Pod deletion and
+#   recreation because the data is on the PVC (not the container filesystem).
+#
+# HOW TO RUN THE DEMO:
+#
+#   Step 1: Create the PVC
+#     kubectl apply -f k8s/basics/backend-pvc.yaml
+#     kubectl get pvc backend-uploads-pvc
+#     # STATUS should be "Bound" — PV was provisioned
+#
+#   Step 2: Apply this Pod (it writes a file on startup via initContainer)
+#     kubectl apply -f k8s/basics/stateful-demo-pod.yaml
+#     kubectl get pod stateful-demo
+#     kubectl logs stateful-demo -c data-writer
+#     # Shows: "Writing timestamp to /data/uploads/demo.txt"
+#
+#   Step 3: Verify the file was written
+#     kubectl exec stateful-demo -- cat /data/uploads/demo.txt
+#     # Shows: "AeroStore persistent storage demo — written at: <timestamp>"
+#
+#   Step 4: Delete the Pod (simulates crash or restart)
+#     kubectl delete pod stateful-demo
+#
+#   Step 5: Verify the PVC still exists and is Bound
+#     kubectl get pvc backend-uploads-pvc
+#     # STATUS: Bound — PVC is independent of the Pod lifecycle
+#
+#   Step 6: Recreate the Pod
+#     kubectl apply -f k8s/basics/stateful-demo-pod.yaml
+#
+#   Step 7: Verify the old file is still there
+#     kubectl exec stateful-demo -- cat /data/uploads/demo.txt
+#     # Shows the SAME timestamp as before — data survived Pod deletion
+#
+#   Step 8: Verify the initContainer added a NEW entry (appended, not overwrote)
+#     kubectl exec stateful-demo -- ls -la /data/uploads/
+#     # Shows both the original file and the new append entry
+#
+# KEY INSIGHT:
+#   The container filesystem (/) is wiped on Pod deletion.
+#   The PVC mount (/data) is NOT wiped — it is a separate volume backed by
+#   a PersistentVolume that exists outside the Pod lifecycle.
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: stateful-demo
+  labels:
+    app: stateful-demo
+    component: persistence-demo
+spec:
+  # ─────────────────────────────────────────────────────────────────────────
+  # INIT CONTAINER: writes demo data to the PVC mount on every Pod start
+  #
+  # initContainers run to completion BEFORE the main container starts.
+  # Here it writes a timestamped entry to prove that:
+  #   - On first run: the file is created fresh
+  #   - On subsequent runs: the file already exists (proving persistence)
+  # ─────────────────────────────────────────────────────────────────────────
+  initContainers:
+    - name: data-writer
+      image: busybox:1.36
+      command:
+        - sh
+        - -c
+        - |
+          echo "=== AeroStore Persistent Storage Demo ==="
+          mkdir -p /data/uploads
+          TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          echo "--- New Pod start: $TIMESTAMP ---" >> /data/uploads/demo.txt
+          echo "Written to /data/uploads/demo.txt at: $TIMESTAMP"
+          echo ""
+          echo "Current contents of /data/uploads/demo.txt:"
+          cat /data/uploads/demo.txt
+          echo "=== End of init ==="
+      volumeMounts:
+        - name: uploads-storage    # must match volumes[].name below
+          mountPath: /data         # path inside the container where PVC is mounted
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # MAIN CONTAINER: serves the data and stays running for inspection
+  # ─────────────────────────────────────────────────────────────────────────
+  containers:
+    - name: app
+      image: busybox:1.36
+      command:
+        - sh
+        - -c
+        - |
+          echo "Main container started. PVC mounted at /data"
+          echo "Run: kubectl exec stateful-demo -- cat /data/uploads/demo.txt"
+          echo "Then delete and recreate this pod to demonstrate persistence."
+          # Keep the pod running so we can exec into it
+          sleep 3600
+      volumeMounts:
+        - name: uploads-storage
+          mountPath: /data         # same PVC, same path, accessible to main container
+
+      resources:
+        requests:
+          cpu: "10m"
+          memory: "16Mi"
+        limits:
+          cpu: "50m"
+          memory: "32Mi"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # VOLUMES: bind this Pod to the PVC by name
+  #
+  # The "name" field here (uploads-storage) is the internal reference used
+  # by volumeMounts. The actual persistent storage comes from the PVC named
+  # "backend-uploads-pvc" — which must exist before this Pod is applied.
+  # ─────────────────────────────────────────────────────────────────────────
+  volumes:
+    - name: uploads-storage
+      persistentVolumeClaim:
+        claimName: backend-uploads-pvc    # references the PVC we created
+
+  # Pod restartPolicy must be Never or OnFailure for a demo Pod.
+  # In production Deployments, the default Always restart policy handles
+  # Pod rescheduling automatically — the PVC reattaches each time.
+  restartPolicy: OnFailure
