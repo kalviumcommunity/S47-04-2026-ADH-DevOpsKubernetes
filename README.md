@@ -339,6 +339,44 @@ HPA is not just a cost-saving feature — it is a reliability mechanism. Without
 
 > For the full HPA formula walkthrough, scenario analysis, and manual vs HPA comparison, see [Kubernetes Scaling & HPA](docs/Kubernetes-Scaling-And-HPA.md).
 
+### Phase 12: Rolling Updates & Rollbacks — Safe Release and Recovery ✅ *(NEW)*
+We configured an explicit RollingUpdate strategy on the backend Deployment and demonstrated how Kubernetes delivers new application versions without downtime, and how it restores the previous stable version instantly when a release fails.
+
+**What this phase covers:**
+- How the **RollingUpdate strategy** replaces old Pods with new ones gradually, keeping traffic alive throughout the transition.
+- How **`maxSurge: 1`** allows one extra Pod during the rollout, and how **`maxUnavailable: 0`** ensures zero downtime by never terminating an old Pod until a new one is Ready.
+- How the **readiness probe acts as the safety gate** — Kubernetes will not advance the rollout (or remove old Pods) until a new Pod passes its readiness check.
+- How **`revisionHistoryLimit: 5`** causes Kubernetes to retain 5 previous ReplicaSets as rollback targets, each being a complete snapshot of the previous Pod template.
+- How **`kubernetes.io/change-cause`** annotations attach human-readable release notes to each revision in rollout history.
+- How **`kubectl rollout undo`** triggers an instant rollback — the old ReplicaSet is already stored, so recovery is a scaling operation (seconds), not a rebuild.
+
+**Key principle:** *Rolling updates limit the blast radius of a bad release. The readiness probe prevents broken Pods from ever entering the Service. Revision history makes recovery instant. Together, these make production deployments safe.*
+
+- *Docs:* [Kubernetes Rolling Updates & Rollbacks](docs/Kubernetes-Rolling-Updates-And-Rollbacks.md).
+- *Changes:* [`k8s/basics/backend-deployment.yaml`](k8s/basics/backend-deployment.yaml) — updated with rolling update strategy, revisionHistoryLimit, change-cause annotation, image bump to `nginx:1.17.0`.
+- *Demo:* [`k8s/basics/rollout-demo.md`](k8s/basics/rollout-demo.md) — full command sequence for video walkthrough.
+
+#### 📊 Rolling Update Diagram
+
+![Kubernetes Rolling Update Diagram](docs/k8s-rolling-update-diagram.png)
+
+```
+Stable (v1):  [Pod 1.16.1] [Pod 1.16.1] [Pod 1.16.1] ← all serving traffic
+
+Rolling:      [Pod 1.16.1] [Pod 1.16.1] [Terminating] [Pod 1.17.0 Ready ✓]
+               ↑ still serving           ↑                ↑ now in Service
+              maxUnavailable=0: old pod only removed after new pod is Ready
+
+Success:      [Pod 1.17.0] [Pod 1.17.0] [Pod 1.17.0]  ← rollout complete
+Failure:      kubectl rollout undo → old ReplicaSet reactivated → stable in ~60s
+```
+
+#### 💡 Reflection: Releases as Rolling Operations
+
+In a production environment, every deployment is a risk. The rolling update strategy is Kubernetes' answer to that risk: it limits how many Pods are in an unknown state at any time, it gates each new Pod on its readiness probe before proceeding, and it keeps the previous version intact as an instant rollback target. A deployment that would previously require a maintenance window becomes a live, zero-downtime operation.
+
+> For the full maxSurge/maxUnavailable mechanics, revision history design, bad release scenario, and RollingUpdate vs Recreate comparison, see [Kubernetes Rolling Updates & Rollbacks](docs/Kubernetes-Rolling-Updates-And-Rollbacks.md).
+
 ---
 
 ## 💻 Developer Guide: Running the K8s Environment
@@ -386,14 +424,15 @@ kubectl port-forward service/aerostore-frontend-service 8080:80
 ├── k8s/              # Kubernetes declarative YAML manifests
 │   ├── kind-cluster-config.yaml
 │   └── basics/
-│       ├── backend-hpa.yaml             ← NEW: HPA with CPU autoscaling
-│       ├── scaling-demo.md              ← NEW: Manual + HPA demo commands
+│       ├── rollout-demo.md              ← NEW: Rolling update + rollback demo commands
+│       ├── backend-hpa.yaml
+│       ├── scaling-demo.md
 │       ├── resource-demo-pod.yaml
 │       ├── namespace-resource-policy.yaml
 │       ├── probe-demo-pod.yaml
 │       ├── app-configmap.yaml
 │       ├── app-secret.yaml
-│       ├── backend-deployment.yaml
+│       ├── backend-deployment.yaml      (updated: rolling update strategy + change-cause)
 │       ├── backend-service.yaml
 │       ├── curl-client-pod.yaml
 │       ├── nginx-deployment.yaml
@@ -402,8 +441,10 @@ kubectl port-forward service/aerostore-frontend-service 8080:80
 │       └── nginx-replicaset.yaml
 ├── scripts/          # Automation scripts (e.g., manage-k8s-cluster.sh)
 ├── docs/             # Extensive documentation on DevOps concepts
-│   ├── Kubernetes-Scaling-And-HPA.md                  ← NEW: Scaling docs
-│   ├── k8s-scaling-hpa-diagram.png                    ← NEW: HPA diagram
+│   ├── Kubernetes-Rolling-Updates-And-Rollbacks.md    ← NEW: Rolling update docs
+│   ├── k8s-rolling-update-diagram.png                 ← NEW: Rollout diagram
+│   ├── Kubernetes-Scaling-And-HPA.md
+│   ├── k8s-scaling-hpa-diagram.png
 │   ├── Kubernetes-Resource-Management.md
 │   ├── k8s-resource-management-diagram.png
 │   ├── Kubernetes-Health-Probes.md
