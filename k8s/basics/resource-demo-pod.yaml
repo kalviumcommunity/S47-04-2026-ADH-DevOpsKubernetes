@@ -1,0 +1,99 @@
+# k8s/basics/resource-demo-pod.yaml
+#
+# Resource Management Demonstration Pod
+#
+# PURPOSE:
+#   Demonstrates correct CPU and memory requests and limits configuration
+#   on a running Pod. This Pod runs stably under the defined constraints
+#   and can be inspected to verify Kubernetes resource accounting.
+#
+# KEY CONCEPTS DEMONSTRATED:
+#
+#   REQUESTS — the guaranteed minimum the scheduler must find available:
+#     cpu: "100m"    → 0.1 CPU cores reserved for this container
+#     memory: "64Mi" → 64 MB RAM guaranteed for this container
+#     The scheduler will ONLY place this Pod on a Node that has at least
+#     100m unallocated CPU and 64Mi unallocated memory. If no such Node
+#     exists, the Pod stays Pending.
+#
+#   LIMITS — the maximum the container is allowed to consume at runtime:
+#     cpu: "250m"     → container is CPU-THROTTLED if it tries to exceed this
+#                       (process slows down — does NOT crash)
+#     memory: "128Mi" → container is OOMKilled if it exceeds this
+#                       (killed immediately, exit code 137, then restarted)
+#
+# VERIFICATION COMMANDS (run after applying):
+#   kubectl apply -f k8s/basics/resource-demo-pod.yaml
+#
+#   # See the Pod's resource spec:
+#   kubectl describe pod resource-demo | grep -A10 "Limits\|Requests"
+#
+#   # See actual resource usage on the node:
+#   kubectl top pod resource-demo
+#
+#   # See how much of the node's allocatable resources this Pod is using:
+#   kubectl describe node | grep -A10 "Allocated resources"
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: resource-demo
+  labels:
+    app: resource-demo
+    purpose: resource-management-demonstration
+spec:
+  containers:
+    - name: resource-demo
+      image: nginx:1.16.1
+      ports:
+        - containerPort: 80
+
+      # ─────────────────────────────────────────────────────────────────
+      # RESOURCE CONFIGURATION
+      #
+      # This is the complete, correct resource block for a small web
+      # server workload. Values are chosen based on nginx's typical
+      # resource footprint for light traffic.
+      # ─────────────────────────────────────────────────────────────────
+      resources:
+        requests:
+          # CPU request: 100 millicores (0.1 of one CPU core)
+          # The scheduler uses this to find a suitable Node.
+          # nginx at idle uses ~10-20m CPU — 100m gives safe headroom.
+          cpu: "100m"
+
+          # Memory request: 64 MiB
+          # The scheduler uses this to verify the Node has enough RAM.
+          # nginx uses ~20-30Mi at idle — 64Mi gives safe headroom.
+          memory: "64Mi"
+
+        limits:
+          # CPU limit: 250 millicores (0.25 of one CPU core)
+          # If the container tries to use more than this, Linux cgroups
+          # throttle it — the process slows down but does NOT crash.
+          # CPU limits are safe to set conservatively.
+          cpu: "250m"
+
+          # Memory limit: 128 MiB
+          # If the container tries to use more than this, the Linux OOM
+          # killer terminates the process immediately (exit code 137).
+          # Kubernetes then restarts the container.
+          # Memory limits must be set with care — too low = OOMKilled loop.
+          memory: "128Mi"
+
+      # Health probes are always paired with resource limits in production
+      livenessProbe:
+        httpGet:
+          path: /
+          port: 80
+        initialDelaySeconds: 10
+        periodSeconds: 30
+        failureThreshold: 3
+
+      readinessProbe:
+        httpGet:
+          path: /
+          port: 80
+        initialDelaySeconds: 5
+        periodSeconds: 10
+        failureThreshold: 3
