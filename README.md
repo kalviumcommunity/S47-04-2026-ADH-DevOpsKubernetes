@@ -266,6 +266,42 @@ Liveness alone restarts the container but sends traffic during the recovery wind
 
 > For probe configuration details, failure demonstrations, and the full scenario walkthrough, see [Kubernetes Health Probes](docs/Kubernetes-Health-Probes.md).
 
+### Phase 10: Resource Management — CPU & Memory Requests and Limits ✅ *(NEW)*
+We defined CPU and memory requests and limits across all workloads and implemented namespace-level resource governance using LimitRange and ResourceQuota, preventing the noisy neighbor problem in a shared cluster.
+
+**What this phase covers:**
+- How **requests** (the scheduling guarantee) differ from **limits** (the runtime enforcement ceiling).
+- Why CPU and memory behave differently when limits are exceeded: CPU is **throttled** (slows down, no crash), memory causes an **OOMKill** (process killed immediately, exit code 137).
+- How the **kube-scheduler** uses resource requests to find a Node with sufficient unallocated capacity — and what happens when no Node qualifies (`Pending`).
+- How **LimitRange** applies default resource constraints to any container that omits them, eliminating the "forgot to set resources" failure mode.
+- How **ResourceQuota** caps the total CPU and memory budget for the entire namespace, preventing one team from consuming all cluster resources.
+- The **noisy neighbor problem**: how missing limits in a shared cluster causes one app to crash others, and how proper configuration prevents it.
+
+**Key principle:** *Without requests, the scheduler is blind. Without limits, the kernel has no boundaries to enforce. Both are required for a stable, fair, production-grade cluster.*
+
+- *Docs:* [Kubernetes Resource Management](docs/Kubernetes-Resource-Management.md).
+- *Manifests:* [`k8s/basics/resource-demo-pod.yaml`](k8s/basics/resource-demo-pod.yaml), [`k8s/basics/namespace-resource-policy.yaml`](k8s/basics/namespace-resource-policy.yaml).
+
+#### 📊 Resource Management Diagram
+
+![Kubernetes Resource Management Diagram](docs/k8s-resource-management-diagram.png)
+
+```
+Requests → Scheduler uses to pick a Node with enough capacity
+         → Pod stays Pending if no Node qualifies
+
+Limits → CPU: throttled (slows down, no crash)
+       → Memory: OOMKilled (killed instantly, exit code 137)
+
+No limits = unbounded container = noisy neighbor = other Pods crash
+```
+
+#### 💡 Reflection: Resource-Aware Kubernetes Design
+
+Resource configuration is not optional in a shared cluster — it is the contract between your application and the platform. Requests tell the platform what your app needs. Limits tell the platform how much it can take. Without this contract, the cluster cannot make fair scheduling decisions, and any single workload can degrade or destroy the reliability of every other workload running alongside it.
+
+> For the full CPU vs memory enforcement analysis, LimitRange and ResourceQuota details, and the noisy neighbor scenario walkthrough, see [Kubernetes Resource Management](docs/Kubernetes-Resource-Management.md).
+
 ---
 
 ## 💻 Developer Guide: Running the K8s Environment
@@ -284,6 +320,9 @@ Deploy the application manifests and all Services:
 # Apply ConfigMap and Secret first (Pods depend on them)
 kubectl apply -f k8s/basics/app-configmap.yaml
 kubectl apply -f k8s/basics/app-secret.yaml
+
+# Apply namespace resource policy (LimitRange + ResourceQuota)
+kubectl apply -f k8s/basics/namespace-resource-policy.yaml
 
 # Apply Deployments and Services
 kubectl apply -f k8s/basics/nginx-deployment.yaml
@@ -309,10 +348,12 @@ kubectl port-forward service/aerostore-frontend-service 8080:80
 ├── k8s/              # Kubernetes declarative YAML manifests
 │   ├── kind-cluster-config.yaml
 │   └── basics/
-│       ├── probe-demo-pod.yaml          ← NEW: Demo pod with all three probes
+│       ├── resource-demo-pod.yaml       ← NEW: Pod with requests + limits demo
+│       ├── namespace-resource-policy.yaml ← NEW: LimitRange + ResourceQuota
+│       ├── probe-demo-pod.yaml
 │       ├── app-configmap.yaml
 │       ├── app-secret.yaml
-│       ├── backend-deployment.yaml      (updated: probes + resource limits added)
+│       ├── backend-deployment.yaml
 │       ├── backend-service.yaml
 │       ├── curl-client-pod.yaml
 │       ├── nginx-deployment.yaml
@@ -321,8 +362,10 @@ kubectl port-forward service/aerostore-frontend-service 8080:80
 │       └── nginx-replicaset.yaml
 ├── scripts/          # Automation scripts (e.g., manage-k8s-cluster.sh)
 ├── docs/             # Extensive documentation on DevOps concepts
-│   ├── Kubernetes-Health-Probes.md                    ← NEW: Health probes docs
-│   ├── k8s-health-probes-diagram.png                  ← NEW: Probes diagram
+│   ├── Kubernetes-Resource-Management.md              ← NEW: Resource management docs
+│   ├── k8s-resource-management-diagram.png            ← NEW: Resource diagram
+│   ├── Kubernetes-Health-Probes.md
+│   ├── k8s-health-probes-diagram.png
 │   ├── Kubernetes-ConfigMaps-And-Secrets.md
 │   ├── k8s-configmap-secret-diagram.png
 │   ├── Kubernetes-Service-Discovery-And-Networking.md

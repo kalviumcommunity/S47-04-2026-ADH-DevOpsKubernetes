@@ -1,0 +1,71 @@
+# k8s/basics/namespace-resource-policy.yaml
+#
+# LimitRange + ResourceQuota for the default namespace
+#
+# PURPOSE:
+#   These two objects enforce resource boundaries at the NAMESPACE level,
+#   providing cluster-wide protection against runaway workloads.
+#
+# ─────────────────────────────────────────────────────────────────────────
+# LimitRange:
+#   Sets default requests and limits for any Pod/Container in the namespace
+#   that does NOT define its own. This ensures no Pod ever runs without
+#   resource constraints — even if the developer forgets to set them.
+#
+# ResourceQuota:
+#   Sets the total resource budget for the entire namespace. Prevents any
+#   single namespace (team/application) from consuming all cluster resources
+#   and starving other namespaces.
+# ─────────────────────────────────────────────────────────────────────────
+
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: aerostore-limit-range
+  namespace: default
+spec:
+  limits:
+    - type: Container
+      # DEFAULT LIMITS — applied to containers with no limits defined
+      default:
+        cpu: "300m"      # If a container has no CPU limit, it gets this
+        memory: "256Mi"  # If a container has no memory limit, it gets this
+
+      # DEFAULT REQUESTS — applied to containers with no requests defined
+      defaultRequest:
+        cpu: "100m"      # If a container has no CPU request, it gets this
+        memory: "64Mi"   # If a container has no memory request, it gets this
+
+      # HARD BOUNDS — no container in this namespace can exceed these
+      max:
+        cpu: "1000m"     # No single container can request/limit more than 1 CPU
+        memory: "512Mi"  # No single container can request/limit more than 512Mi
+
+      # MINIMUM — no container can request less than these
+      min:
+        cpu: "50m"       # Prevents zero-request pods that confuse the scheduler
+        memory: "32Mi"
+
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: aerostore-resource-quota
+  namespace: default
+spec:
+  hard:
+    # Total CPU requests allowed across ALL Pods in this namespace
+    requests.cpu: "4"
+
+    # Total memory requests allowed across ALL Pods in this namespace
+    requests.memory: "2Gi"
+
+    # Total CPU limits allowed across ALL Pods in this namespace
+    limits.cpu: "8"
+
+    # Total memory limits allowed across ALL Pods in this namespace
+    limits.memory: "4Gi"
+
+    # Maximum number of Pods allowed in this namespace
+    pods: "20"
