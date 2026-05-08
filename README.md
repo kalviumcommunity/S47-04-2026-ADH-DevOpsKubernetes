@@ -551,6 +551,28 @@ Ingress consolidates all external routing decisions into a single, auditable, ve
 
 > For the full traffic path analysis, Controller vs Resource distinction, path/host routing options, TLS setup, and the NodePort scenario, see [Kubernetes Ingress & Traffic Routing](docs/Kubernetes-Ingress-And-Traffic-Routing.md).
 
+### Phase 18: NGINX Ingress Controller — Practical External Access ✅ *(NEW)*
+We implemented a working local Ingress setup using the nginx Ingress Controller, enabling the AeroStore application to be accessed at `http://localhost` from outside the kind cluster. This phase bridges the architectural explanation of Phase 17 with a fully functional, runnable configuration.
+
+**What this phase adds:**
+- **`k8s/basics/nginx-ingress-local.yaml`** — HTTP Ingress for kind (no TLS, no host restriction) that routes `http://localhost/api/*` to the backend and `http://localhost/` to the frontend. Designed to work immediately after running the setup script.
+- **`scripts/setup-ingress-controller.sh`** — automated setup: installs the nginx Ingress Controller, waits for it to be healthy, applies the Ingress resource, and prints the access URLs and debug commands.
+- **`k8s/kind-cluster-config.yaml`** — updated with `extraPortMappings` (host:80 → container:80, host:443 → container:443) and `ingress-ready=true` node label — required for the controller to bind to localhost.
+- **`docs/Kubernetes-Nginx-Ingress-Controller.md`** — step-by-step request walkthrough (OS routing → controller → rule match → URL rewrite → ClusterIP proxy → kube-proxy → Pod), how the controller auto-generates `nginx.conf`, and the ClusterIP scenario analysis.
+
+**Access URLs (after setup script):**
+```
+http://localhost/           → React frontend SPA
+http://localhost/api/       → Node.js backend API
+http://localhost/api/products → GET /products (after /api rewrite)
+```
+
+**Key principle:** *The nginx Ingress Controller is the bridge between the external network and the internal cluster network. ClusterIP Services are unreachable externally by design. The controller Pod binds to host port 80, receives external traffic, and proxies it to ClusterIP Services using the cluster's internal DNS — services that would otherwise be invisible to outside users.*
+
+- *Docs:* [NGINX Ingress Controller](docs/Kubernetes-Nginx-Ingress-Controller.md).
+- *Manifest:* [`k8s/basics/nginx-ingress-local.yaml`](k8s/basics/nginx-ingress-local.yaml).
+- *Setup script:* [`scripts/setup-ingress-controller.sh`](scripts/setup-ingress-controller.sh).
+
 ---
 
 ## 💻 Developer Guide: Running the K8s Environment
@@ -622,10 +644,11 @@ kubectl port-forward service/aerostore-frontend-service 8080:80
 │           ├── service.yaml
 │           ├── hpa.yaml                     (conditional on autoscaling.enabled)
 │           └── configmap.yaml
-├── k8s/              # Raw Kubernetes declarative YAML manifests
-│   ├── kind-cluster-config.yaml
+├── k8s/
+│   ├── kind-cluster-config.yaml            (updated: extraPortMappings for Ingress)
 │   └── basics/
-│       ├── aerostore-ingress.yaml       ← NEW: Ingress with path-based routing
+│       ├── nginx-ingress-local.yaml     ← NEW: localhost HTTP Ingress (kind dev)
+│       ├── aerostore-ingress.yaml       (production HTTPS Ingress with TLS)
 │       ├── backend-pvc.yaml
 │       ├── stateful-demo-pod.yaml
 │       ├── persistence-demo.md
@@ -644,10 +667,13 @@ kubectl port-forward service/aerostore-frontend-service 8080:80
 │       ├── nginx-service.yaml
 │       ├── nginx-pod.yaml
 │       └── nginx-replicaset.yaml
-├── scripts/          # Automation scripts (e.g., manage-k8s-cluster.sh)
+├── scripts/          # Automation scripts
+│   ├── setup-ingress-controller.sh  ← NEW: install nginx controller + apply Ingress
+│   └── manage-k8s-cluster.sh
 ├── docs/             # Extensive documentation on DevOps concepts
-│   ├── Kubernetes-Ingress-And-Traffic-Routing.md      ← NEW: Ingress docs
-│   ├── k8s-ingress-diagram.png                        ← NEW: Traffic flow diagram
+│   ├── Kubernetes-Nginx-Ingress-Controller.md         ← NEW: nginx controller docs
+│   ├── Kubernetes-Ingress-And-Traffic-Routing.md
+│   ├── k8s-ingress-diagram.png
 │   ├── Kubernetes-Persistent-Storage.md
 │   ├── k8s-persistent-storage-diagram.png
 │   ├── Helm-Environment-Configuration.md

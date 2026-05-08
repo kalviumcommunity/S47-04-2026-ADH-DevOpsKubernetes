@@ -1,0 +1,113 @@
+# k8s/basics/nginx-ingress-local.yaml
+#
+# Local development Ingress for kind — HTTP only, no TLS
+#
+# PURPOSE:
+#   This Ingress is designed specifically for local kind clusters where
+#   you access the application via http://localhost.
+#   It does NOT require a TLS certificate, making it easy to run and demo.
+#
+# DIFFERENCE FROM aerostore-ingress.yaml (production):
+#   aerostore-ingress.yaml:
+#     - host: aerostore.example.com  (production domain)
+#     - TLS enabled                   (HTTPS via Secret)
+#     - ssl-redirect: true
+#
+#   nginx-ingress-local.yaml (THIS FILE):
+#     - No host rule                  (matches ANY hostname → localhost works)
+#     - No TLS                        (HTTP on port 80)
+#     - ssl-redirect: false           (no HTTPS redirect in dev)
+#     - Access URL: http://localhost  (after port-forward or kind extraPortMappings)
+#
+# SETUP STEPS:
+#
+#   Step 1: Ensure kind cluster has extraPortMappings
+#     The kind-cluster-config.yaml already includes:
+#       extraPortMappings:
+#         - containerPort: 80
+#           hostPort: 80
+#
+#   Step 2: Install the nginx Ingress Controller
+#     kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+#     kubectl wait --namespace ingress-nginx \
+#       --for=condition=ready pod \
+#       --selector=app.kubernetes.io/component=controller \
+#       --timeout=90s
+#     kubectl get pods -n ingress-nginx
+#
+#   Step 3: Apply this Ingress
+#     kubectl apply -f k8s/basics/nginx-ingress-local.yaml
+#
+#   Step 4: Verify
+#     kubectl get ingress aerostore-local-ingress
+#     kubectl describe ingress aerostore-local-ingress
+#
+#   Step 5: Access the application
+#     http://localhost/       → frontend (React SPA)
+#     http://localhost/api/   → backend API
+#
+# HOW THE NGINX CONTROLLER HANDLES REQUESTS:
+#   1. Controller Pod watches the Kubernetes API for Ingress resources
+#   2. When this Ingress is applied, the controller auto-generates nginx.conf
+#   3. Incoming request: GET http://localhost/api/products
+#   4. nginx matches the /api path rule
+#   5. Rewrites URL: /api/products → /products
+#   6. Proxies to: aerostore-backend-service.default.svc.cluster.local:3001
+#   7. Service kube-proxy rule selects a backend Pod
+#   8. Pod processes request, response travels back the same path
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: aerostore-local-ingress
+  labels:
+    app: aerostore
+    environment: local
+  annotations:
+    # Use the nginx Ingress Controller
+    kubernetes.io/ingress.class: "nginx"
+
+    # Strip /api prefix before forwarding to backend
+    # /api/products → /products (backend doesn't need the /api segment)
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+
+    # Disable SSL redirect for local HTTP development
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+
+    # Enable CORS for local frontend-backend communication
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+
+    # Access logs for debugging (shows each request in controller logs)
+    nginx.ingress.kubernetes.io/enable-access-log: "true"
+
+spec:
+  # No TLS section — this is plain HTTP for local development
+  # No host rule at the top level — matches any hostname (including localhost)
+
+  rules:
+    # No host field → matches ANY host including localhost
+    # This is intentional for local development where hostname is not configured
+    - http:
+        paths:
+          # ── BACKEND API ────────────────────────────────────────────────
+          # http://localhost/api/         → aerostore-backend-service:3001
+          # http://localhost/api/products → aerostore-backend-service:3001
+          # URL rewrite strips /api prefix: /api/products → /products
+          - path: /api(/|$)(.*)
+            pathType: Prefix
+            backend:
+              service:
+                name: aerostore-backend-service
+                port:
+                  number: 3001
+
+          # ── FRONTEND SPA ───────────────────────────────────────────────
+          # http://localhost/    → aerostore-frontend-service:80
+          # http://localhost/about → aerostore-frontend-service:80 (React Router handles it)
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: aerostore-frontend-service
+                port:
+                  number: 80
